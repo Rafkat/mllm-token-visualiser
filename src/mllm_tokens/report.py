@@ -1,5 +1,6 @@
 from dataclasses import asdict, dataclass
 
+
 @dataclass(frozen=True, slots=True)
 class TokenReport:
     model_id: str
@@ -25,5 +26,3 @@ class TokenReport:
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
-
-

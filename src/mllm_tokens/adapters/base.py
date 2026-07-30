@@ -12,5 +12,11 @@ class ModelAdapter(ABC):
         self.config = config
 
     @abstractmethod
-    def analyze(self, messages: list[Message], *, add_generation_prompt: bool, kv_cache_dtype: str) -> TokenReport:
+    def analyze(
+        self,
+        messages: list[Message],
+        *,
+        add_generation_prompt: bool,
+        kv_cache_dtype: str,
+    ) -> TokenReport:
         """Preprocess the message and produce token statistics."""

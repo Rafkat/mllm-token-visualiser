@@ -2,9 +2,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Self
 
+
 @dataclass(frozen=True, slots=True)
 class Text:
     text: str
+
 
 @dataclass(frozen=True, slots=True)
 class Image:
@@ -20,6 +22,7 @@ class Video:
 
     def __init__(self, path: str | Path) -> None:
         object.__setattr__(self, "path", Path(path))
+
 
 @dataclass(frozen=True, slots=True)
 class Audio:

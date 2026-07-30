@@ -1,5 +1,5 @@
-from transformers import AutoProcessor
 from qwen_omni_utils import process_mm_info
+from transformers import AutoProcessor
 
 processor = AutoProcessor.from_pretrained("Qwen/Qwen3-Omni-30B-A3B-Instruct")
 

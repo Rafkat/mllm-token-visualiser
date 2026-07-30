@@ -6,7 +6,6 @@ from mllm_tokens.adapters.base import ModelAdapter
 from mllm_tokens.inputs import Audio, Image, Message, Text, Video
 from mllm_tokens.report import TokenReport
 
-
 DTYPE_BYTES = {
     "float32": 4,
     "float16": 2,
@@ -54,16 +53,10 @@ class Qwen3VLAdapter(ModelAdapter):
         audio_tokens = 0
 
         template_tokens = (
-            total_tokens
-            - text_tokens
-            - image_tokens
-            - video_tokens
-            - audio_tokens
+            total_tokens - text_tokens - image_tokens - video_tokens - audio_tokens
         )
 
-        kv_bytes_per_token = self._kv_cache_bytes_per_token(
-            kv_cache_dtype
-        )
+        kv_bytes_per_token = self._kv_cache_bytes_per_token(kv_cache_dtype)
 
         return TokenReport(
             model_id=self.model_id,
@@ -73,9 +66,7 @@ class Qwen3VLAdapter(ModelAdapter):
             video_tokens=video_tokens,
             audio_tokens=audio_tokens,
             template_tokens=template_tokens,
-            token_id_bytes=(
-                input_ids.numel() * input_ids.element_size()
-            ),
+            token_id_bytes=(input_ids.numel() * input_ids.element_size()),
             kv_cache_bytes=total_tokens * kv_bytes_per_token,
             kv_cache_bytes_per_token=kv_bytes_per_token,
         )
@@ -112,9 +103,7 @@ class Qwen3VLAdapter(ModelAdapter):
                         }
                     )
                 elif isinstance(item, Audio):
-                    raise ValueError(
-                        "Qwen3-VL does not support audio input."
-                    )
+                    raise ValueError("Qwen3-VL does not support audio input.")
 
             result.append(
                 {
@@ -150,27 +139,16 @@ class Qwen3VLAdapter(ModelAdapter):
         attention_mask: torch.Tensor,
         token: str,
     ) -> int:
-        token_id = self.processor.tokenizer.convert_tokens_to_ids(
-            token
-        )
+        token_id = self.processor.tokenizer.convert_tokens_to_ids(token)
 
-        return int(
-            (
-                (input_ids == token_id)
-                & attention_mask
-            )
-            .sum()
-            .item()
-        )
+        return int(((input_ids == token_id) & attention_mask).sum().item())
 
     def _kv_cache_bytes_per_token(
         self,
         dtype: str,
     ) -> int:
         if dtype not in DTYPE_BYTES:
-            raise ValueError(
-                f"Unsupported KV-cache dtype: {dtype}"
-            )
+            raise ValueError(f"Unsupported KV-cache dtype: {dtype}")
 
         config = getattr(
             self.config,
@@ -193,10 +171,4 @@ class Qwen3VLAdapter(ModelAdapter):
             config.hidden_size // num_attention_heads,
         )
 
-        return (
-            2
-            * num_layers
-            * num_kv_heads
-            * head_dim
-            * DTYPE_BYTES[dtype]
-        )
+        return 2 * num_layers * num_kv_heads * head_dim * DTYPE_BYTES[dtype]
