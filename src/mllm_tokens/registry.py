@@ -1,7 +1,3 @@
-# TODO перечитать код и задать вопросы по коду
-# TODO есть некоторые неясности в имплементации сервиса
-
-
 from collections.abc import Callable
 
 from mllm_tokens.adapters.base import ModelAdapter

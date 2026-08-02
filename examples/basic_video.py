@@ -5,8 +5,8 @@ def main() -> None:
     analyzer = Analyzer.from_pretrained("Qwen/Qwen3-VL-8B-Instruct")
 
     report = analyzer.analyze_prompt(
-        "Describe this image.",
-        images=["examples/assets/image_sample.jpg"],
+        "Describe this video.",
+        videos=["examples/assets/video_sample.mp4"],
     )
 
     print(report.to_dict())

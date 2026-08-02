@@ -85,7 +85,7 @@ class Qwen3VLAdapter(ModelAdapter):
                     content.append(
                         {
                             "type": "text",
-                            "text": item.value,
+                            "text": item.text,
                         }
                     )
                 elif isinstance(item, Image):
@@ -126,7 +126,7 @@ class Qwen3VLAdapter(ModelAdapter):
                 if isinstance(item, Text):
                     count += len(
                         tokenizer.encode(
-                            item.value,
+                            item.text,
                             add_special_tokens=False,
                         )
                     )
