@@ -26,3 +26,14 @@ class TokenReport:
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
+
+
+    def print_dict(self) -> None:
+        key_values = list(self.to_dict().items())
+
+        print("*" * 50)
+        for i, (key, value) in enumerate(key_values):
+            print(f"{key}: {value}")
+            if i != len(key_values) - 1:
+                print("-" * 50)
+        print("*" * 50)

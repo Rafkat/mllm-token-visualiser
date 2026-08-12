@@ -9,7 +9,7 @@ def main() -> None:
         videos=["examples/assets/video_sample.mp4"],
     )
 
-    print(report.to_dict())
+    report.print_dict()
 
 
 if __name__ == "__main__":

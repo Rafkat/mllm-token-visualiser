@@ -9,7 +9,7 @@ def main() -> None:
         images=["examples/assets/image_sample.jpg"],
     )
 
-    print(report.to_dict())
+    report.print_dict()
 
 
 if __name__ == "__main__":
