@@ -1,6 +1,6 @@
 [project]
 name = "mllm-token-visualiser"
-version = "0.1.1"
+version = "0.1.2"
 description = "Token analysis and visualisation for multimodal language models"
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
