@@ -1,5 +1,6 @@
 [project]
 name = "mllm-token-visualiser"
+license = "Apache-2.0"
 version = "0.1.2"
 description = "Token analysis and visualisation for multimodal language models"
 readme = "README.md"
