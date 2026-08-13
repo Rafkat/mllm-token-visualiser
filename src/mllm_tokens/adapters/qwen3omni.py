@@ -10,11 +10,11 @@ from mllm_tokens.report import TokenReport
 
 class Qwen3omniAdapter(ModelAdapter):
     def analyze(
-            self,
-            messages: list[Message],
-            *,
-            add_generation_prompt: bool = True,
-            kv_cache_dtype: str = "bfloat16",
+        self,
+        messages: list[Message],
+        *,
+        add_generation_prompt: bool = True,
+        kv_cache_dtype: str = "bfloat16",
     ) -> TokenReport:
         hf_messages = self._to_hf_messages(messages)
 
@@ -35,19 +35,19 @@ class Qwen3omniAdapter(ModelAdapter):
         image_tokens = self._count_placeholder_tokens(
             input_ids,
             attention_mask,
-            getattr(self.processor, "image_token", "<|image_pad|>")
+            getattr(self.processor, "image_token", "<|image_pad|>"),
         )
 
         video_tokens = self._count_placeholder_tokens(
             input_ids,
             attention_mask,
-            getattr(self.processor, "video_token", "<|video_pad|>")
+            getattr(self.processor, "video_token", "<|video_pad|>"),
         )
 
         audio_tokens = self._count_placeholder_tokens(
             input_ids,
             attention_mask,
-            getattr(self.processor, "audio_token", "<|audio_pad|>")
+            getattr(self.processor, "audio_token", "<|audio_pad|>"),
         )
 
         template_tokens = (
@@ -69,10 +69,7 @@ class Qwen3omniAdapter(ModelAdapter):
             kv_cache_bytes_per_token=kv_bytes_per_token,
         )
 
-    def _to_hf_messages(
-            self,
-            messages: list[Message]
-    ) -> list[dict[str, Any]]:
+    def _to_hf_messages(self, messages: list[Message]) -> list[dict[str, Any]]:
         result = []
 
         for message in messages:
@@ -117,64 +114,42 @@ class Qwen3omniAdapter(ModelAdapter):
 
         return result
 
-
-    def _count_content_text_tokens(
-            self,
-            message: list[Message]
-    ) -> int:
+    def _count_content_text_tokens(self, messages: list[Message]) -> int:
         tokenizer = self.processor.tokenizer
         count = 0
 
-        for message in message:
+        for message in messages:
             for item in message.content:
                 if isinstance(item, Text):
-                    count += len(
-                        tokenizer.encode(
-                            item.text,
-                            add_special_tokens=False
-                        )
-                    )
+                    count += len(tokenizer.encode(item.text, add_special_tokens=False))
 
         return count
 
     def _count_placeholder_tokens(
-            self,
-            input_ids: torch.Tensor,
-            attention_mask: torch.Tensor,
-            token: str
+        self, input_ids: torch.Tensor, attention_mask: torch.Tensor, token: str
     ) -> int:
         token_id = self.processor.tokenizer.convert_tokens_to_ids(token)
 
         return int(((input_ids == token_id) & attention_mask).sum().item())
 
     def _kv_cache_bytes_per_token(
-            self,
-            dtype: str,
+        self,
+        dtype: str,
     ) -> int:
         if dtype not in DTYPE_BYTES:
             raise ValueError(f"Unsupported KV-cache dtype {dtype}")
 
-        config = getattr(
-            self.config,
-            "text_config",
-            self.config
-        )
+        config = getattr(self.config, "text_config", self.config)
 
         text_config = config.thinker_config.text_config
 
         num_layers = text_config.num_hidden_layers
         num_attention_heads = text_config.num_attention_heads
 
-        num_kv_heads = getattr(
-            text_config,
-            "num_key_value_heads",
-            num_attention_heads
-        )
+        num_kv_heads = getattr(text_config, "num_key_value_heads", num_attention_heads)
 
         head_dim = getattr(
-            text_config,
-            "head_dim",
-            text_config.hidden_size // num_attention_heads
+            text_config, "head_dim", text_config.hidden_size // num_attention_heads
         )
 
         return 2 * num_layers * num_kv_heads * head_dim * DTYPE_BYTES[dtype]

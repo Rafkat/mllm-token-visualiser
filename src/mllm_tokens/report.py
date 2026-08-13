@@ -27,7 +27,6 @@ class TokenReport:
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
 
-
     def print_dict(self) -> None:
         key_values = list(self.to_dict().items())
 

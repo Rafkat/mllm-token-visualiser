@@ -13,9 +13,7 @@ def main() -> None:
         )
     ]
 
-    report = analyzer.analyze(
-        messages
-    )
+    report = analyzer.analyze(messages)
 
     report.print_dict()
 
