@@ -8,7 +8,7 @@ from mllm_tokens.inputs import Audio, Image, Message, Text, Video
 from mllm_tokens.report import TokenReport
 
 
-class Qwen3omniAdapter(ModelAdapter):
+class Qwen3OmniAdapter(ModelAdapter):
     def analyze(
         self,
         messages: list[Message],
@@ -139,9 +139,7 @@ class Qwen3omniAdapter(ModelAdapter):
         if dtype not in DTYPE_BYTES:
             raise ValueError(f"Unsupported KV-cache dtype {dtype}")
 
-        config = getattr(self.config, "text_config", self.config)
-
-        text_config = config.thinker_config.text_config
+        text_config = self.config.thinker_config.text_config
 
         num_layers = text_config.num_hidden_layers
         num_attention_heads = text_config.num_attention_heads

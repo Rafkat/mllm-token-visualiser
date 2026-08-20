@@ -1,7 +1,7 @@
 [project]
 name = "mllm-token-visualiser"
 license = "Apache-2.0"
-version = "0.2.0"
+version = "0.2.1"
 description = "Token analysis and visualisation for multimodal language models"
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
@@ -49,4 +49,12 @@ select = [
     "I",
     "UP",
     "B",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+    "integration: requires a real Hugging Face processor",
+    "media: requires local image, video, or audio decoding",
 ]
