@@ -1,10 +1,8 @@
-from typing import Any
-
 import torch
 
 from mllm_tokens.adapters.base import ModelAdapter
 from mllm_tokens.adapters.dtype_bytes import DTYPE_BYTES
-from mllm_tokens.inputs import Audio, Image, Message, Text, Video
+from mllm_tokens.inputs import Message, Text
 from mllm_tokens.report import TokenReport
 
 
@@ -16,10 +14,10 @@ class Qwen3VLAdapter(ModelAdapter):
         add_generation_prompt: bool = True,
         kv_cache_dtype: str = "bfloat16",
     ) -> TokenReport:
-        hf_messages = self._to_hf_messages(messages)
+        normalized_messages = self._normalize_messages(messages)
 
         inputs = self.processor.apply_chat_template(
-            hf_messages,
+            normalized_messages,
             tokenize=True,
             add_generation_prompt=add_generation_prompt,
             return_dict=True,
@@ -64,49 +62,6 @@ class Qwen3VLAdapter(ModelAdapter):
             kv_cache_bytes=total_tokens * kv_bytes_per_token,
             kv_cache_bytes_per_token=kv_bytes_per_token,
         )
-
-    def _to_hf_messages(
-        self,
-        messages: list[Message],
-    ) -> list[dict[str, Any]]:
-        result = []
-
-        for message in messages:
-            content = []
-
-            for item in message.content:
-                if isinstance(item, Text):
-                    content.append(
-                        {
-                            "type": "text",
-                            "text": item.text,
-                        }
-                    )
-                elif isinstance(item, Image):
-                    content.append(
-                        {
-                            "type": "image",
-                            "path": str(item.path),
-                        }
-                    )
-                elif isinstance(item, Video):
-                    content.append(
-                        {
-                            "type": "video",
-                            "path": str(item.path),
-                        }
-                    )
-                elif isinstance(item, Audio):
-                    raise ValueError("Qwen3-VL does not support audio input.")
-
-            result.append(
-                {
-                    "role": message.role,
-                    "content": content,
-                }
-            )
-
-        return result
 
     def _count_content_text_tokens(
         self,

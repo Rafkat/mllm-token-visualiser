@@ -864,9 +864,10 @@ wheels = [
 
 [[package]]
 name = "mllm-token-visualiser"
-version = "0.2.0"
+version = "0.2.1"
 source = { editable = "." }
 dependencies = [
+    { name = "librosa" },
     { name = "pillow" },
     { name = "pyyaml" },
     { name = "qwen-vl-utils" },
@@ -894,6 +895,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "librosa", specifier = "==0.11.0" },
     { name = "numba", marker = "extra == 'omni'", specifier = ">=0.59" },
     { name = "pillow", specifier = ">=10.0" },
     { name = "pyyaml", specifier = ">=6.0" },
