@@ -1,7 +1,7 @@
 [project]
 name = "mllm-token-visualiser"
 license = "Apache-2.0"
-version = "0.2.1"
+version = "0.3.0"
 description = "Token analysis and visualisation for multimodal language models"
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
