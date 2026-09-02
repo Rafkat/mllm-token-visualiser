@@ -1,7 +1,7 @@
 [project]
 name = "mllm-token-visualiser"
 license = "Apache-2.0"
-version = "0.3.0"
+version = "0.4.0"
 description = "Token analysis and visualisation for multimodal language models"
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
@@ -11,10 +11,10 @@ dependencies = [
     "pyyaml>=6.0",
     "qwen-vl-utils>=0.0.14,<0.1",
     "rich>=13.0",
-    "torch>=2.4",
-    "torchaudio==2.11.0",
-    "torchcodec>=0.15.0",
-    "torchvision==0.28.0",
+    "torch==2.13",
+    "torchaudio>=2.11.0",
+    "torchcodec>=0.16.0",
+    "torchvision>=0.28.0",
     "transformers>=5.2,<6",
     "typer>=0.12",
 ]
