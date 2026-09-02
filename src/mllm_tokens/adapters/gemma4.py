@@ -5,7 +5,7 @@ from mllm_tokens.adapters.dtype_bytes import DTYPE_BYTES
 from mllm_tokens.inputs import Message, Text
 from mllm_tokens.report import TokenReport
 
-gemma_audio_variants = ["e2b", "e4b", "12b"]
+GEMMA_AUDIO_VARIANTS = ("e2b", "e4b", "12b")
 
 
 class Gemma4Adapter(ModelAdapter):
@@ -18,11 +18,12 @@ class Gemma4Adapter(ModelAdapter):
     ) -> TokenReport:
         normalized_messages = self._normalize_messages(messages)
 
-        if any(audio_gemma in self.model_id for audio_gemma in gemma_audio_variants):
-            audio_count = True
-        else:
+        supports_audio = any(
+            audio_gemma in self.model_id.lower() for audio_gemma in GEMMA_AUDIO_VARIANTS
+        )
+
+        if not supports_audio:
             self.check_audio_input(normalized_messages)
-            audio_count = False
 
         inputs = self.processor.apply_chat_template(
             normalized_messages,
@@ -50,14 +51,15 @@ class Gemma4Adapter(ModelAdapter):
             getattr(self.processor, "video_token", "<|video|>"),
         )
 
-        if audio_count:
-            audio_tokens = self._count_placeholder_tokens(
+        audio_tokens = (
+            self._count_placeholder_tokens(
                 input_ids,
                 attention_mask,
                 getattr(self.processor, "audio_token", "<|audio|>"),
             )
-        else:
-            audio_tokens = 0
+            if supports_audio
+            else 0
+        )
 
         template_tokens = (
             total_tokens - text_tokens - image_tokens - video_tokens - audio_tokens
