@@ -26,7 +26,6 @@ class MiniCPMo45Adapter(ModelAdapter):
             normalized_messages, add_generation_prompt
         )
 
-        print(f"{minicpm_messages=}")
         inputs = self.processor(
             **minicpm_messages, max_slice_nums=1, return_tensors="pt"
         )
@@ -80,7 +79,6 @@ class MiniCPMo45Adapter(ModelAdapter):
             cur_msgs = []
             for c in content:
                 if c["type"] == "image":
-                    print(f"{c=}")
                     if not Path(c["image"]).is_file():
                         raise FileNotFoundError(f"Image not found: {c['image']}")
 

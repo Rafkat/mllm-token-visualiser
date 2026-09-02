@@ -33,8 +33,8 @@ A token analysis can report:
 | `audio_tokens` | Audio positions inserted into the model context |
 | `template_tokens` | Roles, separators, generation prompt, and other template overhead |
 | `token_id_bytes` | Memory occupied by the `input_ids` tensor |
-| `kv_cache_bytes` | Estimated KV-cache memory for the analysed input |
 | `kv_cache_bytes_per_token` | Estimated decoder KV-cache cost per context position |
+| `kv_cache_bytes` | Estimated KV-cache memory for the analysed input |
 
 The KV-cache values are architectural estimates. They do not include model weights, encoder activations, temporary attention buffers, framework overhead, or allocator fragmentation.
 
@@ -55,7 +55,7 @@ The project uses [uv](https://docs.astral.sh/uv/) for dependency management and 
 ### Development installation
 
 ```bash
-git clone https://github.com/Rafkat/mllm-token-visualiser.git
+git clone <repository-url>
 cd mllm-token-visualiser
 uv sync
 ```
@@ -102,14 +102,15 @@ analyzer = Analyzer.from_pretrained(
 
 messages = [
     Message.user(
-        Image("examples/assets/image_sample.jpg"),
+        Image("examples/assets/cat.jpg"),
         Text("Describe this image."),
     )
 ]
 
 report = analyzer.analyze(messages)
 
-report.print_dict()
+print(report)
+print(report.to_dict())
 ```
 
 `Analyzer.from_pretrained()` is intended to load the processor and configuration required for analysis, not the complete model weights. Reuse the same `Analyzer` for multiple inputs to avoid repeatedly loading processor metadata.
@@ -136,7 +137,7 @@ messages = [
 ]
 
 report = analyzer.analyze(messages)
-report.print_dict()
+print(report)
 ```
 
 The wrappers remove ambiguity: a plain string such as `"cat.jpg"` could mean text or a file path, whereas `Text(...)` and `Image(...)` state the modality explicitly.
@@ -152,13 +153,13 @@ analyzer = Analyzer.from_pretrained(
 
 messages = [
     Message.user(
-        Video("examples/assets/video_sample.mp4"),
+        Video("examples/assets/example.mp4"),
         Text("What happens in this video?"),
     )
 ]
 
 report = analyzer.analyze(messages)
-report.print_dict()
+print(report.to_dict())
 ```
 
 Run the repository example with:
@@ -181,14 +182,16 @@ analyzer = Analyzer.from_pretrained(
 messages = [
     Message.user(
         Text("Listen to the recording and inspect the image."),
-        Audio("examples/assets/audio_sample.wav"),
-        Image("examples/assets/image_sample.jpg"),
+        Audio("examples/assets/example.wav"),
+        Image("examples/assets/frame.jpg"),
         Text("Describe the situation and any relevant sounds."),
     )
 ]
 
 report = analyzer.analyze(messages)
-report.print_dict()
+
+print(report)
+print(report.to_dict())
 ```
 
 The Omni adapter accounts for text, image, video, audio, and chat-template positions separately. Its input KV-cache estimate uses the **Thinker text decoder**, because the Thinker maintains the autoregressive multimodal context.
@@ -266,8 +269,8 @@ src/mllm_tokens/
 ├── report.py            # immutable analysis result
 └── adapters/
     ├── base.py          # ModelAdapter contract
-    ├── qwen3vl.py      # Qwen3-VL processing and accounting
-    └── qwen3omni.py    # Qwen3-Omni processing and accounting
+    ├── qwen3_vl.py      # Qwen3-VL processing and accounting
+    └── qwen3_omni.py    # Qwen3-Omni processing and accounting
 ```
 
 Each model family owns its processor-specific conversion and token accounting inside an adapter. The `Analyzer` depends only on the shared `ModelAdapter` interface, making future model support additive rather than a growing chain of conditions.
@@ -345,6 +348,7 @@ The printed path should be inside `test_project/.venv/.../site-packages/`.
 - [x] Qwen3-Omni text, image, video, and audio accounting
 - [x] Qwen3-Omni Thinker KV-cache estimation
 - [x] Token-ID and KV-cache memory estimates
+- [ ] Separate Thinker and Talker memory reports
 - [ ] Add a CLI built on the same library API
 - [ ] Add further MLLM adapters
 - [ ] Add richer terminal visualisation and export formats
@@ -373,7 +377,7 @@ When adding an adapter, include small processor-level tests and document which m
 
 ## License
 
-Licensed under the [Apache License 2.0](LICENSE.md).
+Choose and add a licence before publishing the project. Apache-2.0 or MIT are common choices for an open-source Python utility; the selected licence should be recorded in both `LICENSE` and `pyproject.toml`.
 
 ---
 
