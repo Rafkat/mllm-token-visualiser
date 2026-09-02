@@ -1,52 +1,75 @@
 # MLLM Token Visualiser
 
-> Inspect how text, images, video, and audio expand into model context—and estimate the memory cost before inference.
+> Measure how text, images, video, and audio expand into model context—and estimate their memory cost before inference.
 
-`mllm-token-visualiser` is a Python library for analysing the tokenised inputs of multimodal large language models (MLLMs). It provides one model-independent interface while keeping processor-specific behaviour inside adapters.
+`mllm-token-visualiser` is a Python library for analysing tokenised multimodal inputs without loading complete model weights. It exposes one typed, model-independent API while keeping processor-specific behaviour inside adapters.
 
-The first supported model families are **Qwen3-VL** and **Qwen3-Omni**, covering text, image, video, and audio input analysis through one public API.
+The library distinguishes user text, modality positions, chat-template overhead, and padding instead of treating every special token as removable noise.
 
-## Why this project?
+## Features
 
-For a text-only model, counting tokens is usually straightforward. For an MLLM, the final context also contains:
+- Counts total, text, image, video, audio, and template tokens.
+- Uses each model family's processor and chat template.
+- Preserves interleaved multimodal content order.
+- Excludes padding through the attention mask.
+- Estimates `input_ids` memory and decoder KV-cache memory.
+- Loads processor/configuration metadata rather than full model weights.
+- Provides an adapter interface for adding further model families.
 
-- image placeholders produced after visual preprocessing;
-- video tokens whose count depends on sampling and resolution;
-- audio tokens or features;
-- chat-template tokens such as roles, separators, and generation prompts;
-- padding, which must not be counted as active context;
-- model-specific special tokens;
-- a KV cache whose size depends on the decoder architecture and cache dtype.
+## Supported models
 
-Simply removing every special token is not enough. Template fragments such as `user` and newlines may remain, while some special tokens represent genuine modality positions. This library instead separates **user content**, **modality tokens**, and **template overhead** using the original structured input together with the model processor.
+| Model family | Text | Image | Video | Audio | Status |
+|---|:---:|:---:|:---:|:---:|---|
+| Qwen3-VL | ✅ | ✅ | ✅ | — | Implemented |
+| Qwen3-Omni | ✅ | ✅ | ✅ | ✅ | Implemented |
+| MiniCPM-o 4.5 | ✅ | ✅ | ✅ | ✅ | Implemented |
+| Gemma 4 | ✅ | ✅ | Checkpoint-dependent | Checkpoint-dependent | Implemented |
+| NVIDIA Nemotron | — | — | — | — | Planned |
+
+Gemma 4 modality support depends on the selected checkpoint and its processor. The adapter can account for image, video, and audio placeholders when the checkpoint supports them.
+
+This project is still pre-`1.0`; its public API and report schema may evolve.
 
 ## What it reports
-
-A token analysis can report:
 
 | Metric | Meaning |
 |---|---|
 | `total_tokens` | All active input positions, excluding padding |
 | `text_tokens` | Tokens produced by user-provided text only |
-| `image_tokens` | Image positions inserted into the model context |
-| `video_tokens` | Video positions inserted into the model context |
-| `audio_tokens` | Audio positions inserted into the model context |
+| `image_tokens` | Image positions inserted into model context |
+| `video_tokens` | Video positions inserted into model context |
+| `audio_tokens` | Audio positions inserted into model context |
 | `template_tokens` | Roles, separators, generation prompt, and other template overhead |
 | `token_id_bytes` | Memory occupied by the `input_ids` tensor |
-| `kv_cache_bytes_per_token` | Estimated decoder KV-cache cost per context position |
 | `kv_cache_bytes` | Estimated KV-cache memory for the analysed input |
+| `kv_cache_bytes_per_token` | Estimated decoder KV-cache cost per active context position |
 
-The KV-cache values are architectural estimates. They do not include model weights, encoder activations, temporary attention buffers, framework overhead, or allocator fragmentation.
+KV-cache values are architectural estimates. They exclude model weights, encoder activations, temporary attention buffers, framework overhead, and allocator fragmentation.
 
-## Status
+## Why special-token filtering is not enough
 
-This project is an early prototype. Its public API and report schema may evolve before `1.0`.
+An MLLM context contains more than ordinary text tokens:
 
-| Model family | Status | Modalities |
-|---|---|---|
-| Qwen3-VL | Implemented | text, image, video |
-| Qwen3-Omni | Implemented | text, image, video, audio |
-| Other MLLMs | Planned | adapter-dependent |
+```text
+total context
+├── user text
+├── image / video / audio positions
+└── template overhead
+    ├── role markers
+    ├── separators and newlines
+    └── optional generation prompt
+```
+
+Removing every special token would also remove genuine modality positions, while template fragments such as role text or newlines may remain. The library instead combines the original structured input with the final processor output.
+
+## Requirements
+
+- Python `>=3.11,<3.15`
+- PyTorch 2.13
+- Transformers `>=5.2,<6`
+- FFmpeg shared libraries for processor paths that decode audio or video through TorchCodec
+
+TorchAudio 2.11 supports PyTorch 2.11 and later through PyTorch's stable ABI. TorchCodec 0.16 adds support for FFmpeg 9.
 
 ## Installation
 
@@ -55,76 +78,77 @@ The project uses [uv](https://docs.astral.sh/uv/) for dependency management and 
 ### Development installation
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/Rafkat/mllm-token-visualiser.git
 cd mllm-token-visualiser
 uv sync
 ```
 
+Install optional Qwen3-Omni utilities with:
+
+```bash
+uv sync --extra omni
+```
+
 ### Install a built wheel
+
+Build the distribution:
 
 ```bash
 uv build
-uv pip install dist/mllm_token_visualiser-0.1.0-py3-none-any.whl
 ```
 
-In another uv project, prefer recording the wheel as a dependency:
+Install version 0.4.0 into another uv project:
 
 ```bash
-uv add ../mllm-token-visualiser/dist/mllm_token_visualiser-0.1.0-py3-none-any.whl
+uv add ../mllm-token-visualiser/dist/mllm_token_visualiser-0.4.0-py3-none-any.whl
 ```
 
-### Video support
+### FFmpeg and video support
 
-Video decoding requires FFmpeg and a supported decoding backend. On macOS:
+TorchCodec requires an FFmpeg installation that exposes shared libraries. On macOS with Homebrew:
 
 ```bash
 brew install ffmpeg
-uv add torchcodec
+ffmpeg -version
 ```
 
-To explicitly select TorchCodec for Qwen video processing:
+Recent TorchCodec releases support FFmpeg major versions 4 through 9. The FFmpeg executable being available in `PATH` does not by itself guarantee that the operating-system dynamic loader can locate `libavutil`, `libavcodec`, and the other shared libraries.
+
+For Qwen video processing, TorchCodec can be selected explicitly:
 
 ```bash
 FORCE_QWENVL_VIDEO_READER=torchcodec \
   uv run python examples/basic_video.py
 ```
 
-TorchCodec is preferred because recent `torchvision` releases removed the legacy `torchvision.io.read_video` API.
-
 ## Quick start
 
 ```python
 from mllm_tokens import Analyzer, Image, Message, Text
 
-analyzer = Analyzer.from_pretrained(
-    "Qwen/Qwen3-VL-8B-Instruct",
-)
+analyzer = Analyzer.from_pretrained("Qwen/Qwen3-VL-8B-Instruct")
 
 messages = [
     Message.user(
-        Image("examples/assets/cat.jpg"),
+        Image("examples/assets/image_sample.jpg"),
         Text("Describe this image."),
     )
 ]
 
 report = analyzer.analyze(messages)
-
-print(report)
-print(report.to_dict())
+report.print_dict()
 ```
 
-`Analyzer.from_pretrained()` is intended to load the processor and configuration required for analysis, not the complete model weights. Reuse the same `Analyzer` for multiple inputs to avoid repeatedly loading processor metadata.
+`Analyzer.from_pretrained()` loads the processor and configuration needed for analysis, not complete model weights. Reuse an `Analyzer` across inputs to avoid repeatedly loading processor metadata.
 
 ## Interleaved multimodal input
 
-Content order is preserved. This matters when text refers to media appearing before or after it:
+Content order is preserved:
 
 ```python
 from mllm_tokens import Analyzer, Image, Message, Text
 
-analyzer = Analyzer.from_pretrained(
-    "Qwen/Qwen3-VL-8B-Instruct",
-)
+analyzer = Analyzer.from_pretrained("Qwen/Qwen3-VL-8B-Instruct")
 
 messages = [
     Message.user(
@@ -137,29 +161,27 @@ messages = [
 ]
 
 report = analyzer.analyze(messages)
-print(report)
+report.print_dict()
 ```
 
-The wrappers remove ambiguity: a plain string such as `"cat.jpg"` could mean text or a file path, whereas `Text(...)` and `Image(...)` state the modality explicitly.
+Typed wrappers remove ambiguity: `"cat.jpg"` could mean text or a path, whereas `Text(...)` and `Image(...)` state the intended modality.
 
 ## Video example
 
 ```python
 from mllm_tokens import Analyzer, Message, Text, Video
 
-analyzer = Analyzer.from_pretrained(
-    "Qwen/Qwen3-VL-8B-Instruct",
-)
+analyzer = Analyzer.from_pretrained("Qwen/Qwen3-VL-8B-Instruct")
 
 messages = [
     Message.user(
-        Video("examples/assets/example.mp4"),
+        Video("examples/assets/video_sample.mp4"),
         Text("What happens in this video?"),
     )
 ]
 
 report = analyzer.analyze(messages)
-print(report.to_dict())
+report.print_dict()
 ```
 
 Run the repository example with:
@@ -169,8 +191,6 @@ uv run python examples/basic_video.py
 ```
 
 ## Qwen3-Omni example
-
-Qwen3-Omni accepts audio in addition to text and visual content. The same structured API can represent an audio-only request or a fully interleaved multimodal message:
 
 ```python
 from mllm_tokens import Analyzer, Audio, Image, Message, Text
@@ -182,61 +202,55 @@ analyzer = Analyzer.from_pretrained(
 messages = [
     Message.user(
         Text("Listen to the recording and inspect the image."),
-        Audio("examples/assets/example.wav"),
-        Image("examples/assets/frame.jpg"),
-        Text("Describe the situation and any relevant sounds."),
+        Audio("examples/assets/audio_sample.wav"),
+        Image("examples/assets/image_sample.jpg"),
+        Text("Describe the situation and relevant sounds."),
     )
 ]
 
 report = analyzer.analyze(messages)
-
-print(report)
-print(report.to_dict())
+report.print_dict()
 ```
 
-The Omni adapter accounts for text, image, video, audio, and chat-template positions separately. Its input KV-cache estimate uses the **Thinker text decoder**, because the Thinker maintains the autoregressive multimodal context.
+The Qwen3-Omni input KV-cache estimate uses the Thinker text decoder because it maintains the autoregressive multimodal context. Talker-generation memory is separate and is not included in this input-context estimate.
 
-If the model generates speech, the Talker uses a separate KV cache. Talker-generation memory is conceptually distinct from the input-context estimate because its architecture and generated sequence length differ.
+## Gemma 4 example
+
+```python
+from mllm_tokens import Analyzer, Image, Message, Text
+
+analyzer = Analyzer.from_pretrained("google/gemma-4-e4b-it")
+
+messages = [
+    Message.user(
+        Image("examples/assets/image_sample.jpg"),
+        Text("Describe the image and identify its most important details."),
+    )
+]
+
+report = analyzer.analyze(messages)
+report.print_dict()
+```
+
+The Gemma 4 adapter applies the checkpoint's native chat template, counts supported modality placeholders in the active sequence, and derives KV-cache dimensions from `config.text_config`.
 
 ## Text-token accounting
 
-Text tokens are calculated from the original `Text` objects, encoded without adding model special tokens. They are **not** obtained by subtracting every special token from the final chat-template sequence.
+Text tokens are calculated from the original `Text` objects with model special tokens disabled. They are not inferred by subtracting every special token from the final template sequence. This keeps role markers, separators, and generation prompts in `template_tokens` rather than misclassifying them as user text.
 
-This distinction prevents template content from being misclassified as user text:
-
-```text
-total context
-├── user text
-├── image / video / audio positions
-└── template overhead
-    ├── role markers
-    ├── separators and newlines
-    └── optional generation prompt
-```
-
-For batched inputs, modality-token matching is combined with `attention_mask` so padding positions do not contribute to the counts.
+For batched tensors, modality matching is combined with `attention_mask` so padding positions do not contribute to counts.
 
 ## KV-cache estimation
 
-For a conventional decoder transformer, the approximate cache cost per context position is:
+For a conventional decoder transformer, the approximate cache cost per active context position is:
 
 ```text
 2 × num_hidden_layers × num_key_value_heads × head_dim × dtype_bytes
 ```
 
-The factor `2` represents keys and values. `num_key_value_heads` is used instead of query-head count because queries are not retained in the KV cache.
-
-For Qwen3-Omni input analysis, these values come from the Thinker text decoder:
-
-```python
-config.thinker_config.text_config
-```
-
-The Thinker holds the autoregressive context for the multimodal request. The Talker has a separate cache during audio generation and should be reported independently because its sequence length and architecture differ.
+The factor `2` represents keys and values. Query heads are not used because queries are not retained in the KV cache.
 
 ## Public API
-
-The intended public imports live in `mllm_tokens.__init__`:
 
 ```python
 from mllm_tokens import (
@@ -262,18 +276,21 @@ import:       mllm_tokens
 
 ```text
 src/mllm_tokens/
-├── __init__.py          # public API
-├── analyzer.py          # user-facing orchestration
-├── inputs.py            # typed multimodal input objects
-├── registry.py          # model family → adapter factory
-├── report.py            # immutable analysis result
+├── __init__.py
+├── analyzer.py
+├── inputs.py
+├── registry.py
+├── report.py
 └── adapters/
-    ├── base.py          # ModelAdapter contract
-    ├── qwen3_vl.py      # Qwen3-VL processing and accounting
-    └── qwen3_omni.py    # Qwen3-Omni processing and accounting
+    ├── base.py
+    ├── dtype_bytes.py
+    ├── gemma4.py
+    ├── minicpmo45.py
+    ├── qwen3omni.py
+    └── qwen3vl.py
 ```
 
-Each model family owns its processor-specific conversion and token accounting inside an adapter. The `Analyzer` depends only on the shared `ModelAdapter` interface, making future model support additive rather than a growing chain of conditions.
+Each model family owns processor conversion and token accounting inside an adapter. `Analyzer` depends on the common `ModelAdapter` contract, so model support remains additive.
 
 ## Repository layout
 
@@ -285,54 +302,38 @@ mllm-token-visualiser/
 ├── tests/
 └── examples/
     ├── assets/
-    ├── basic_text.py
+    ├── basic_audio.py
     ├── basic_image.py
     ├── basic_video.py
     └── interleaved.py
 ```
 
-- `src/` contains the installable library.
-- `tests/` contains automated correctness checks.
-- `examples/` contains small runnable demonstrations for users and contributors.
-
 ## Development
-
-Install the project and development dependencies:
 
 ```bash
 uv sync
-```
-
-Run formatting, linting, and tests:
-
-```bash
 uv run ruff format --check .
 uv run ruff check .
 uv run pytest
-```
-
-Build both the wheel and source distribution:
-
-```bash
 uv build
 ```
 
-Verify the public package import:
+Verify the public import:
 
 ```bash
 uv run python -c "import mllm_tokens; print(mllm_tokens.__file__)"
 ```
 
-## Testing the wheel as an external user
+## Testing the wheel externally
 
-Create a separate project so the test cannot accidentally import source files from the repository:
+Create a separate project so the test cannot accidentally import the source tree:
 
 ```bash
 mkdir test_project
 cd test_project
 uv init
 uv python pin 3.12
-uv add ../mllm-token-visualiser/dist/mllm_token_visualiser-0.1.0-py3-none-any.whl
+uv add ../mllm-token-visualiser/dist/mllm_token_visualiser-0.4.0-py3-none-any.whl
 uv run python -c "import mllm_tokens; print(mllm_tokens.__file__)"
 ```
 
@@ -340,44 +341,43 @@ The printed path should be inside `test_project/.venv/.../site-packages/`.
 
 ## Roadmap
 
-- [x] Typed text, image, video, and audio input objects
+- [x] Typed text, image, video, and audio inputs
 - [x] Ordered interleaved message representation
 - [x] Adapter registry and common adapter contract
-- [x] Structured token report
-- [x] Qwen3-VL token accounting prototype
-- [x] Qwen3-Omni text, image, video, and audio accounting
-- [x] Qwen3-Omni Thinker KV-cache estimation
-- [x] Token-ID and KV-cache memory estimates
-- [ ] Separate Thinker and Talker memory reports
-- [ ] Add a CLI built on the same library API
-- [ ] Add further MLLM adapters
+- [x] Structured token and memory report
+- [x] Qwen3-VL adapter
+- [x] Qwen3-Omni adapter and Thinker KV-cache estimate
+- [x] MiniCPM-o 4.5 adapter
+- [x] Gemma 4 adapter
+- [ ] Add NVIDIA Nemotron support after selecting and validating the target multimodal checkpoint family
+- [ ] Add a separate streaming-analysis track for incremental MLLM inputs and outputs
+- [ ] Report token growth per streaming chunk or turn
+- [ ] Estimate KV-cache growth and retained context during streaming inference
+- [ ] Separate input-context, generated-text, and generated-audio accounting where the model exposes distinct generation pipelines
+- [ ] Add adapter-level unit and integration fixtures
+- [ ] Add a CLI built on the library API
 - [ ] Add richer terminal visualisation and export formats
+- [ ] Add further MLLM adapters
 - [ ] Stabilise the public API and publish to PyPI
 
 ## Design principles
 
-- **Processor-aware:** count the sequence that the model processor actually creates.
+- **Processor-aware:** count the sequence the model processor creates.
 - **Content-aware:** distinguish user content from chat-template overhead.
 - **Model-extensible:** isolate family-specific behaviour behind adapters.
 - **Lightweight:** analyse tokenisation without loading full model weights when possible.
 - **Transparent:** expose assumptions behind every memory estimate.
-- **Library first:** keep the core usable from Python; a CLI can reuse the same implementation.
+- **Library first:** keep the core usable from Python; a CLI can reuse it.
 
 ## Contributing
 
-Issues and pull requests are welcome, especially for:
+Issues and pull requests are welcome, especially for processor compatibility, new adapters, reference token-count fixtures, media-decoding portability, and more accurate memory modelling.
 
-- processor-version compatibility;
-- new model adapters;
-- reference token-count fixtures;
-- video and audio decoding portability;
-- more accurate cache-memory modelling.
-
-When adding an adapter, include small processor-level tests and document which model and `transformers` versions were validated.
+When adding an adapter, include processor-level tests and document the model checkpoints and Transformers versions used for validation.
 
 ## License
 
-Choose and add a licence before publishing the project. Apache-2.0 or MIT are common choices for an open-source Python utility; the selected licence should be recorded in both `LICENSE` and `pyproject.toml`.
+Licensed under the [Apache License 2.0](LICENSE.md).
 
 ---
 
