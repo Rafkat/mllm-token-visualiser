@@ -16,6 +16,8 @@ class Qwen3VLAdapter(ModelAdapter):
     ) -> TokenReport:
         normalized_messages = self._normalize_messages(messages)
 
+        self.check_audio_input(normalized_messages)
+
         inputs = self.processor.apply_chat_template(
             normalized_messages,
             tokenize=True,

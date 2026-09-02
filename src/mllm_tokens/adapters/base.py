@@ -70,3 +70,10 @@ class ModelAdapter(ABC):
             )
 
         return result
+
+    @staticmethod
+    def check_audio_input(normalized_messages):
+        for message in normalized_messages:
+            for content in message['content']:
+                if content['type'] == 'audio':
+                    raise ValueError("Not supported input type [AUDIO]")
