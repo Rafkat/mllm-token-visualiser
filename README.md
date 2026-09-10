@@ -24,10 +24,14 @@ The library distinguishes user text, modality positions, chat-template overhead,
 | Qwen3-Omni | ✅ | ✅ | ✅ | ✅ | Implemented |
 | MiniCPM-o 4.5 | ✅ | ✅ | ✅ | ✅ | Implemented |
 | Gemma 4 | ✅ | ✅ | Checkpoint-dependent | Checkpoint-dependent | Implemented |
-| NVIDIA Nemotron 3 Nano Omni | ✅ | ✅ | ✅ | ✅ | Implemented |
+| NVIDIA Nemotron 3 Nano Omni FP8 | ✅ | ✅ | ✅ | ✅ | Implemented |
 
 Gemma 4 modality support depends on the selected checkpoint and its processor. The adapter can account for image, video, and audio placeholders when the checkpoint supports them.
 
+The Nemotron adapter has been validated with
+`nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-FP8`.
+Other precision variants may use different revisions of the remote processor
+and have not yet been validated.
 Nemotron 3 Nano Omni currently supports one video per request. Video files are sampled with PyAV before being passed to the model processor.
 
 This project is still pre-`1.0`; its public API and report schema may evolve.
@@ -243,7 +247,7 @@ The Gemma 4 adapter applies the checkpoint's native chat template, counts suppor
 from mllm_tokens import Analyzer, Audio, Image, Message, Text, Video
 
 analyzer = Analyzer.from_pretrained(
-    "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16",
+    "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-FP8",
 )
 
 messages = [
