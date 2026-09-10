@@ -77,3 +77,18 @@ class ModelAdapter(ABC):
             for content in message["content"]:
                 if content["type"] == "audio":
                     raise ValueError("Not supported input type: audio")
+
+    @staticmethod
+    def check_video_input(normalized_messages: list[dict]) -> None:
+        video_counter = 0
+        for message in normalized_messages:
+            for content in message["content"]:
+                if content["type"] == "video":
+                    video_counter += 1
+
+        if video_counter > 1:
+            raise ValueError(
+                "This model currently supports only one video per request. "
+                "The Nemotron processor does not correctly expand "
+                "multiple <video> placeholders."
+            )
