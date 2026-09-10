@@ -5,7 +5,6 @@ from typing import Any
 import av
 import numpy as np
 import torch
-from transformers.video_utils import VideoMetadata
 
 from mllm_tokens.adapters.base import ModelAdapter
 from mllm_tokens.adapters.dtype_bytes import DTYPE_BYTES
@@ -60,7 +59,6 @@ class NemotronAdapter(ModelAdapter):
                 }
 
         inputs = self.processor(**processor_kwargs)
-        print(self.processor.batch_decode(inputs.input_ids[0]))
 
         input_ids = inputs["input_ids"]
         attention_mask = inputs["attention_mask"].bool()
@@ -138,7 +136,7 @@ class NemotronAdapter(ModelAdapter):
         self,
         *,
         video: np.ndarray | torch.Tensor | None,
-        video_metadata: VideoMetadata | None,
+        video_metadata: SimpleNamespace | None,
     ) -> int:
         if video is None:
             return 0
@@ -241,7 +239,7 @@ class NemotronAdapter(ModelAdapter):
         config = self.config.llm_config
 
         pattern = config.hybrid_override_pattern
-        num_layers = pattern.count("*")
+        num_attention_layers = pattern.count("*")
         num_attention_heads = config.num_attention_heads
 
         num_kv_heads = getattr(
@@ -256,7 +254,7 @@ class NemotronAdapter(ModelAdapter):
             config.hidden_size // num_attention_heads,
         )
 
-        return 2 * num_layers * num_kv_heads * head_dim * DTYPE_BYTES[dtype]
+        return 2 * num_attention_layers * num_kv_heads * head_dim * DTYPE_BYTES[dtype]
 
     @staticmethod
     def load_video(
@@ -323,7 +321,7 @@ class NemotronAdapter(ModelAdapter):
         list[Any],
         list[Any],
         np.ndarray | torch.Tensor | None,
-        VideoMetadata | None,
+        SimpleNamespace | None,
     ]:
         prompt_messages: list[dict[str, str]] = []
 
@@ -331,7 +329,7 @@ class NemotronAdapter(ModelAdapter):
         audios: list[Any] = []
 
         video: np.ndarray | torch.Tensor | None = None
-        video_metadata: VideoMetadata | None = None
+        video_metadata: SimpleNamespace | None = None
 
         image_token = getattr(
             self.processor,
