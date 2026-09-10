@@ -24,9 +24,11 @@ The library distinguishes user text, modality positions, chat-template overhead,
 | Qwen3-Omni | ✅ | ✅ | ✅ | ✅ | Implemented |
 | MiniCPM-o 4.5 | ✅ | ✅ | ✅ | ✅ | Implemented |
 | Gemma 4 | ✅ | ✅ | Checkpoint-dependent | Checkpoint-dependent | Implemented |
-| NVIDIA Nemotron | — | — | — | — | Planned |
+| NVIDIA Nemotron 3 Nano Omni | ✅ | ✅ | ✅ | ✅ | Implemented |
 
 Gemma 4 modality support depends on the selected checkpoint and its processor. The adapter can account for image, video, and audio placeholders when the checkpoint supports them.
+
+Nemotron 3 Nano Omni currently supports one video per request. Video files are sampled with PyAV before being passed to the model processor.
 
 This project is still pre-`1.0`; its public API and report schema may evolve.
 
@@ -67,6 +69,7 @@ Removing every special token would also remove genuine modality positions, while
 - Python `>=3.11,<3.15`
 - PyTorch 2.13
 - Transformers `>=5.2,<6`
+- PyAV 18 or later for Nemotron video decoding
 - FFmpeg shared libraries for processor paths that decode audio or video through TorchCodec
 
 TorchAudio 2.11 supports PyTorch 2.11 and later through PyTorch's stable ABI. TorchCodec 0.16 adds support for FFmpeg 9.
@@ -97,10 +100,10 @@ Build the distribution:
 uv build
 ```
 
-Install version 0.4.0 into another uv project:
+Install version 0.5.0 into another uv project:
 
 ```bash
-uv add ../mllm-token-visualiser/dist/mllm_token_visualiser-0.4.0-py3-none-any.whl
+uv add ../mllm-token-visualiser/dist/mllm_token_visualiser-0.5.0-py3-none-any.whl
 ```
 
 ### FFmpeg and video support
@@ -234,6 +237,31 @@ report.print_dict()
 
 The Gemma 4 adapter applies the checkpoint's native chat template, counts supported modality placeholders in the active sequence, and derives KV-cache dimensions from `config.text_config`.
 
+## NVIDIA Nemotron example
+
+```python
+from mllm_tokens import Analyzer, Audio, Image, Message, Text, Video
+
+analyzer = Analyzer.from_pretrained(
+    "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16",
+)
+
+messages = [
+    Message.user(
+        Image("examples/assets/image_sample.jpg"),
+        Audio("examples/assets/audio_sample.wav"),
+        Video("examples/assets/video_sample.mp4"),
+        Text("Describe the image, audio, and video."),
+    )
+]
+
+report = analyzer.analyze(messages)
+report.print_dict()
+```
+The Nemotron adapter uses PyAV to sample video frames and passes the resulting array with source-frame metadata to the model processor. The current processor integration supports one video per request.
+NemotronH combines Mamba-2, attention, and MoE layers. Its KV-cache estimate includes only layers marked as attention layers in hybrid_override_pattern; recurrent Mamba state is not included.
+
+
 ## Text-token accounting
 
 Text tokens are calculated from the original `Text` objects with model special tokens disabled. They are not inferred by subtracting every special token from the final template sequence. This keeps role markers, separators, and generation prompts in `template_tokens` rather than misclassifying them as user text.
@@ -286,6 +314,7 @@ src/mllm_tokens/
     ├── dtype_bytes.py
     ├── gemma4.py
     ├── minicpmo45.py
+    ├── nematron.py
     ├── qwen3omni.py
     └── qwen3vl.py
 ```
@@ -333,7 +362,7 @@ mkdir test_project
 cd test_project
 uv init
 uv python pin 3.12
-uv add ../mllm-token-visualiser/dist/mllm_token_visualiser-0.4.0-py3-none-any.whl
+uv add ../mllm-token-visualiser/dist/mllm_token_visualiser-0.5.0-py3-none-any.whl
 uv run python -c "import mllm_tokens; print(mllm_tokens.__file__)"
 ```
 
@@ -349,7 +378,7 @@ The printed path should be inside `test_project/.venv/.../site-packages/`.
 - [x] Qwen3-Omni adapter and Thinker KV-cache estimate
 - [x] MiniCPM-o 4.5 adapter
 - [x] Gemma 4 adapter
-- [ ] Add NVIDIA Nemotron support after selecting and validating the target multimodal checkpoint family
+- [x] Add NVIDIA Nemotron support after selecting and validating the target multimodal checkpoint family
 - [ ] Add a separate streaming-analysis track for incremental MLLM inputs and outputs
 - [ ] Report token growth per streaming chunk or turn
 - [ ] Estimate KV-cache growth and retained context during streaming inference
