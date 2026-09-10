@@ -60,6 +60,7 @@ class NemotronAdapter(ModelAdapter):
                 }
 
         inputs = self.processor(**processor_kwargs)
+        print(self.processor.batch_decode(inputs.input_ids[0]))
 
         input_ids = inputs["input_ids"]
         attention_mask = inputs["attention_mask"].bool()
@@ -239,7 +240,8 @@ class NemotronAdapter(ModelAdapter):
 
         config = self.config.llm_config
 
-        num_layers = config.num_hidden_layers
+        pattern = config.hybrid_override_pattern
+        num_layers = pattern.count("*")
         num_attention_heads = config.num_attention_heads
 
         num_kv_heads = getattr(

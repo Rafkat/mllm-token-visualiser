@@ -867,6 +867,7 @@ name = "mllm-token-visualiser"
 version = "0.4.1"
 source = { editable = "." }
 dependencies = [
+    { name = "av" },
     { name = "librosa" },
     { name = "pillow" },
     { name = "pyyaml" },
@@ -895,6 +896,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "av", specifier = ">=18.0.0" },
     { name = "librosa", specifier = "==0.11.0" },
     { name = "numba", marker = "extra == 'omni'", specifier = ">=0.59" },
     { name = "pillow", specifier = ">=10.0" },

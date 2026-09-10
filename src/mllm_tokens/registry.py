@@ -21,7 +21,7 @@ def get_adapter_class(model_id: str) -> type[ModelAdapter]:
         return MiniCPMo45Adapter
     elif "gemma-4" in normalized:
         return Gemma4Adapter
-    elif "nemotron" in normalized:
+    elif "nemotron-3-nano-omni" in normalized:
         return NemotronAdapter
 
     raise ValueError(f"Unsupported model: {model_id!r}. No matching adapter was found.")
