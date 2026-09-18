@@ -1,24 +1,15 @@
 import subprocess
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import librosa
 import PIL.Image as PImage
 
-from mllm_tokens.adapters.base import ModelAdapter
+from mllm_tokens.adapters.base import MediaSource, ModelAdapter
 from mllm_tokens.adapters.dtype_bytes import DTYPE_BYTES
-from mllm_tokens.inputs import Message, Text
+from mllm_tokens.inputs import Message
 from mllm_tokens.report import TokenReport, TokenSegment
-
-
-@dataclass(frozen=True, slots=True)
-class _MediaSource:
-    message_index: int
-    content_index: int
-    role: str
-    modality: str
 
 
 class MiniCPMo45Adapter(ModelAdapter):
@@ -93,7 +84,7 @@ class MiniCPMo45Adapter(ModelAdapter):
         enable_thinking: bool = False,
         omni: bool = True,
         use_tts_template: bool = False,
-    ) -> tuple[dict[str, Any], list[_MediaSource], list[_MediaSource]]:
+    ) -> tuple[dict[str, Any], list[MediaSource], list[MediaSource]]:
         images = []
         audios = []
         visual_sources = []
@@ -117,7 +108,7 @@ class MiniCPMo45Adapter(ModelAdapter):
                     images.append(image)
                     cur_msgs.append("<image>./</image>")
                     visual_sources.append(
-                        _MediaSource(**source_kwargs, modality="image")
+                        MediaSource(**source_kwargs, modality="image")
                     )
                 elif c["type"] == "audio":
                     if not Path(c["audio"]).is_file():
@@ -125,9 +116,7 @@ class MiniCPMo45Adapter(ModelAdapter):
                     audio, _ = librosa.load(c["audio"], sr=16000, mono=True)
                     audios.append(audio)
                     cur_msgs.append("<audio>./</audio>")
-                    audio_sources.append(
-                        _MediaSource(**source_kwargs, modality="audio")
-                    )
+                    audio_sources.append(MediaSource(**source_kwargs, modality="audio"))
                     use_tts_template = True
                 elif c["type"] == "text":
                     cur_msgs.append(c["text"])
@@ -139,7 +128,7 @@ class MiniCPMo45Adapter(ModelAdapter):
                     cur_msgs.append("<image>./</image>" * len(video_segments))
                     images.extend(video_segments)
                     visual_sources.extend(
-                        _MediaSource(**source_kwargs, modality="video")
+                        MediaSource(**source_kwargs, modality="video")
                         for _ in video_segments
                     )
                 else:
@@ -162,18 +151,6 @@ class MiniCPMo45Adapter(ModelAdapter):
         }
 
         return processor_kwargs, visual_sources, audio_sources
-
-
-    def _count_content_text_tokens(self, messages: list[Message]) -> int:
-        tokenizer = self.processor.tokenizer
-        count = 0
-
-        for message in messages:
-            for item in message.content:
-                if isinstance(item, Text):
-                    count += len(tokenizer.encode(item.text, add_special_tokens=False))
-
-        return count
 
     def _kv_cache_bytes_per_token(
         self,
@@ -229,29 +206,8 @@ class MiniCPMo45Adapter(ModelAdapter):
         return frames
 
     @staticmethod
-    def _count_image_video_tokens(image_sources, inputs) -> tuple[int, int]:
-        image_bounds = inputs.image_bound[0]
-
-        if len(image_bounds) != len(image_sources):
-            raise ValueError(
-                "Cannot match visual bounds with input images: "
-                f"processor returned {len(image_bounds)} bounds, "
-                f"but {len(image_sources)} visual inputs were provided. "
-                "The processor may have split an image into several slices."
-            )
-
-        image_tokens = 0
-        video_tokens = 0
-        for image_source, (start, end) in zip(image_sources, image_bounds, strict=True):
-            if image_source == "image":
-                image_tokens += (end - start).item()
-            else:
-                video_tokens += (end - start).item()
-        return image_tokens, video_tokens
-
-    @staticmethod
     def _build_bound_segments(
-        sources: list[_MediaSource],
+        sources: list[MediaSource],
         bounds: Any,
         *,
         bound_name: str,
@@ -263,7 +219,7 @@ class MiniCPMo45Adapter(ModelAdapter):
                 f"but {len(sources)} sources were provided."
             )
 
-        token_counts: dict[_MediaSource, int] = {}
+        token_counts: dict[MediaSource, int] = {}
         for source, (start, end) in zip(sources, bounds, strict=True):
             token_counts[source] = token_counts.get(source, 0) + int(
                 (end - start).item()
@@ -278,13 +234,4 @@ class MiniCPMo45Adapter(ModelAdapter):
                 tokens=tokens,
             )
             for source, tokens in token_counts.items()
-        )
-
-    @staticmethod
-    def _sum_segment_tokens(
-        segments: tuple[TokenSegment, ...],
-        modality: str,
-    ) -> int:
-        return sum(
-            segment.tokens for segment in segments if segment.modality == modality
         )
