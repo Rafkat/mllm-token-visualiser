@@ -29,8 +29,8 @@ class ModelAdapter(ABC):
         self,
         messages: list[Message],
         *,
-        add_generation_prompt: bool,
-        kv_cache_dtype: str,
+        add_generation_prompt: bool = True,
+        kv_cache_dtype: str = "bfloat16",
     ) -> TokenReport:
         """Preprocess the message and produce token statistics."""
 

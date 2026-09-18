@@ -1,7 +1,7 @@
 from abc import ABC
 from typing import Any
 
-from mllm_tokens.adapters.base import ModelAdapter
+from mllm_tokens.adapters.base import MediaModality, ModelAdapter
 from mllm_tokens.inputs import Message
 from mllm_tokens.report import TokenSegment
 
@@ -11,7 +11,7 @@ class QwenAdapter(ModelAdapter, ABC):
         self,
         messages: list[Message],
         inputs: Any,
-        modality: str,
+        modality: MediaModality,
     ) -> tuple[TokenSegment, ...]:
         sources = self._build_media_sources(messages, modality)
         grid_key = f"{modality}_grid_thw"
