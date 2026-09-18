@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from mllm_tokens.inputs import Audio, Image, Message, Text, Video
-from mllm_tokens.report import TokenReport
+from mllm_tokens.report import TokenReport, TokenSegment
 
 
 class ModelAdapter(ABC):
@@ -21,8 +21,8 @@ class ModelAdapter(ABC):
     ) -> TokenReport:
         """Preprocess the message and produce token statistics."""
 
+    @staticmethod
     def _normalize_messages(
-        self,
         messages: list[Message],
     ) -> list[dict[str, Any]]:
         result = []
@@ -72,14 +72,14 @@ class ModelAdapter(ABC):
         return result
 
     @staticmethod
-    def check_audio_input(normalized_messages: list[dict]) -> None:
+    def _check_audio_input(normalized_messages: list[dict]) -> None:
         for message in normalized_messages:
             for content in message["content"]:
                 if content["type"] == "audio":
                     raise ValueError("Not supported input type: audio")
 
     @staticmethod
-    def check_video_input(normalized_messages: list[dict]) -> None:
+    def _check_only_one_video_input(normalized_messages: list[dict]) -> None:
         video_counter = 0
         for message in normalized_messages:
             for content in message["content"]:
@@ -92,3 +92,40 @@ class ModelAdapter(ABC):
                 "The Nemotron processor does not correctly expand "
                 "multiple <video> placeholders."
             )
+
+    def _build_text_segments(self, messages: list[Message]) -> list[TokenSegment]:
+        tokenizer = self.processor.tokenizer
+        segments = []
+
+        for message_index, message in enumerate(messages):
+            for content_index, item in enumerate(message.content):
+                if not isinstance(item, Text):
+                    continue
+
+                tokens = len(
+                    tokenizer.encode(
+                        item.text,
+                        add_special_tokens=False,
+                    )
+                )
+
+                segments.append(
+                    TokenSegment(
+                        message_index=message_index,
+                        content_index=content_index,
+                        role=message.role,
+                        modality="text",
+                        tokens=tokens,
+                    )
+                )
+
+        return segments
+
+    def _build_image_segments(self, messages: list[Message]) -> list[TokenSegment]:
+        return []
+
+    def _build_video_segments(self, messages: list[Message]) -> list[TokenSegment]:
+        return []
+
+    def _build_audio_segments(self, messages: list[Message]) -> list[TokenSegment]:
+        return []

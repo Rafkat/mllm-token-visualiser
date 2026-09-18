@@ -2,6 +2,15 @@ from dataclasses import asdict, dataclass
 
 
 @dataclass(frozen=True, slots=True)
+class TokenSegment:
+    message_index: int
+    content_index: int
+    role: str
+    modality: str
+    tokens: int
+
+
+@dataclass(frozen=True, slots=True)
 class TokenReport:
     model_id: str
 
@@ -16,6 +25,7 @@ class TokenReport:
 
     kv_cache_bytes: int | None = None
     kv_cache_bytes_per_token: int | None = None
+    segments: tuple[TokenSegment, ...] = ()
 
     @property
     def kv_cache_mib(self) -> float | None:

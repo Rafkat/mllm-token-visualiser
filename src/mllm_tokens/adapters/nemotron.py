@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -8,8 +10,16 @@ import torch
 
 from mllm_tokens.adapters.base import ModelAdapter
 from mllm_tokens.adapters.dtype_bytes import DTYPE_BYTES
-from mllm_tokens.inputs import Message, Text
-from mllm_tokens.report import TokenReport
+from mllm_tokens.inputs import Audio, Image, Message, Video
+from mllm_tokens.report import TokenReport, TokenSegment
+
+
+@dataclass(frozen=True, slots=True)
+class _MediaSource:
+    message_index: int
+    content_index: int
+    role: str
+    modality: str
 
 
 class NemotronAdapter(ModelAdapter):
@@ -22,7 +32,7 @@ class NemotronAdapter(ModelAdapter):
     ) -> TokenReport:
         normalized_messages = self._normalize_messages(messages)
 
-        self.check_video_input(normalized_messages)
+        self._check_only_one_video_input(normalized_messages)
 
         (
             prompt_messages,
@@ -65,24 +75,37 @@ class NemotronAdapter(ModelAdapter):
 
         total_tokens = int(attention_mask.sum().item())
 
-        text_tokens = self._count_content_text_tokens(messages)
-
-        image_tokens = self._count_placeholder_tokens(
+        text_segments = self._build_text_segments(messages)
+        image_segments = self._build_placeholder_segments(
+            messages,
             input_ids,
             attention_mask,
-            getattr(self.processor, "image_token", "<image>"),
+            modality="image",
+            token=getattr(self.processor, "image_token", "<image>"),
         )
-
-        video_tokens = self._count_video_tokens(
+        video_segments = self._build_video_segments(
+            messages,
             video=video,
             video_metadata=video_metadata,
         )
-
-        audio_tokens = self._count_placeholder_tokens(
+        audio_segments = self._build_placeholder_segments(
+            messages,
             input_ids,
             attention_mask,
-            getattr(self.processor, "audio_token", "<so_embedding>"),
+            modality="audio",
+            token=getattr(self.processor, "audio_token", "<so_embedding>"),
         )
+        segments = self._sort_segments(
+            text_segments,
+            image_segments,
+            video_segments,
+            audio_segments,
+        )
+
+        text_tokens = self._sum_segment_tokens(segments, "text")
+        image_tokens = self._sum_segment_tokens(segments, "image")
+        video_tokens = self._sum_segment_tokens(segments, "video")
+        audio_tokens = self._sum_segment_tokens(segments, "audio")
 
         template_tokens = (
             total_tokens - text_tokens - image_tokens - video_tokens - audio_tokens
@@ -101,36 +124,137 @@ class NemotronAdapter(ModelAdapter):
             token_id_bytes=(input_ids.numel() * input_ids.element_size()),
             kv_cache_bytes=total_tokens * kv_bytes_per_token,
             kv_cache_bytes_per_token=kv_bytes_per_token,
+            segments=segments,
         )
 
-    def _count_content_text_tokens(
+    @staticmethod
+    def _build_media_sources(
+        messages: list[Message],
+        modality: str,
+    ) -> tuple[_MediaSource, ...]:
+        media_types = {"image": Image, "video": Video, "audio": Audio}
+
+        if modality not in media_types:
+            raise ValueError(f"Unsupported segment modality: {modality}")
+
+        media_type = media_types[modality]
+        return tuple(
+            _MediaSource(
+                message_index=message_index,
+                content_index=content_index,
+                role=message.role,
+                modality=modality,
+            )
+            for message_index, message in enumerate(messages)
+            for content_index, item in enumerate(message.content)
+            if isinstance(item, media_type)
+        )
+
+    @staticmethod
+    def _build_segments_from_counts(
+        sources: tuple[_MediaSource, ...],
+        token_counts: list[int],
+        *,
+        source_name: str,
+    ) -> tuple[TokenSegment, ...]:
+        if len(token_counts) != len(sources):
+            raise ValueError(
+                f"Cannot match {source_name} with input items: "
+                f"processor returned {len(token_counts)} values, "
+                f"but {len(sources)} sources were provided."
+            )
+
+        return tuple(
+            TokenSegment(
+                message_index=source.message_index,
+                content_index=source.content_index,
+                role=source.role,
+                modality=source.modality,
+                tokens=tokens,
+            )
+            for source, tokens in zip(sources, token_counts, strict=True)
+        )
+
+    def _build_placeholder_segments(
         self,
         messages: list[Message],
-    ) -> int:
-        tokenizer = self.processor.tokenizer
-        count = 0
-
-        for message in messages:
-            for item in message.content:
-                if isinstance(item, Text):
-                    count += len(
-                        tokenizer.encode(
-                            item.text,
-                            add_special_tokens=False,
-                        )
-                    )
-
-        return count
-
-    def _count_placeholder_tokens(
-        self,
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
+        *,
+        modality: str,
         token: str,
-    ) -> int:
+    ) -> tuple[TokenSegment, ...]:
+        sources = self._build_media_sources(messages, modality)
         token_id = self.processor.tokenizer.convert_tokens_to_ids(token)
+        matches = (input_ids == token_id) & attention_mask
 
-        return int(((input_ids == token_id) & attention_mask).sum().item())
+        if matches.ndim != 2 or matches.shape[0] != 1:
+            raise ValueError(
+                "TokenSegment currently supports one processed conversation at a time."
+            )
+
+        run_lengths = []
+        current_run = 0
+        for is_match in matches[0].tolist():
+            if is_match:
+                current_run += 1
+            elif current_run:
+                run_lengths.append(current_run)
+                current_run = 0
+
+        if current_run:
+            run_lengths.append(current_run)
+
+        return self._build_segments_from_counts(
+            sources,
+            run_lengths,
+            source_name=f"{modality} placeholder groups",
+        )
+
+    def _build_video_segments(
+        self,
+        messages: list[Message],
+        *,
+        video: np.ndarray | torch.Tensor | None,
+        video_metadata: SimpleNamespace | None,
+    ) -> tuple[TokenSegment, ...]:
+        sources = self._build_media_sources(messages, "video")
+        token_counts = (
+            []
+            if video is None
+            else [
+                self._count_video_tokens(
+                    video=video,
+                    video_metadata=video_metadata,
+                )
+            ]
+        )
+
+        return self._build_segments_from_counts(
+            sources,
+            token_counts,
+            source_name="video token counts",
+        )
+
+    @staticmethod
+    def _sort_segments(
+        *segment_groups: Sequence[TokenSegment],
+    ) -> tuple[TokenSegment, ...]:
+        return tuple(
+            sorted(
+                (segment for group in segment_groups for segment in group),
+                key=lambda segment: (segment.message_index, segment.content_index),
+            )
+        )
+
+    @staticmethod
+    def _sum_segment_tokens(
+        segments: Sequence[TokenSegment],
+        modality: str,
+    ) -> int:
+        return sum(
+            segment.tokens for segment in segments if segment.modality == modality
+        )
 
     def _count_video_tokens(
         self,

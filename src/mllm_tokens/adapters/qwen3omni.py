@@ -1,12 +1,10 @@
-import torch
-
-from mllm_tokens.adapters.base import ModelAdapter
 from mllm_tokens.adapters.dtype_bytes import DTYPE_BYTES
-from mllm_tokens.inputs import Message, Text
+from mllm_tokens.adapters.qwen_adapter import QwenAdapter
+from mllm_tokens.inputs import Message
 from mllm_tokens.report import TokenReport
 
 
-class Qwen3OmniAdapter(ModelAdapter):
+class Qwen3OmniAdapter(QwenAdapter):
     def analyze(
         self,
         messages: list[Message],
@@ -25,28 +23,38 @@ class Qwen3OmniAdapter(ModelAdapter):
         )
 
         input_ids = inputs["input_ids"]
-        attention_mask = inputs["attention_mask"]
+        attention_mask = inputs["attention_mask"].bool()
 
         total_tokens = int(attention_mask.sum().item())
-        text_tokens = self._count_content_text_tokens(messages)
-
-        image_tokens = self._count_placeholder_tokens(
+        text_segments = self._build_text_segments(messages)
+        image_segments = self._build_grid_segments(
+            messages,
+            inputs,
+            "image",
+        )
+        video_segments = self._build_grid_segments(
+            messages,
+            inputs,
+            "video",
+        )
+        audio_segments = self._build_placeholder_segments(
+            messages,
             input_ids,
             attention_mask,
-            getattr(self.processor, "image_token", "<|image_pad|>"),
+            modality="audio",
+            token=getattr(self.processor, "audio_token", "<|audio_pad|>"),
+        )
+        segments = self._sort_segments(
+            text_segments,
+            image_segments,
+            video_segments,
+            audio_segments,
         )
 
-        video_tokens = self._count_placeholder_tokens(
-            input_ids,
-            attention_mask,
-            getattr(self.processor, "video_token", "<|video_pad|>"),
-        )
-
-        audio_tokens = self._count_placeholder_tokens(
-            input_ids,
-            attention_mask,
-            getattr(self.processor, "audio_token", "<|audio_pad|>"),
-        )
+        text_tokens = self._sum_segment_tokens(segments, "text")
+        image_tokens = self._sum_segment_tokens(segments, "image")
+        video_tokens = self._sum_segment_tokens(segments, "video")
+        audio_tokens = self._sum_segment_tokens(segments, "audio")
 
         template_tokens = (
             total_tokens - text_tokens - image_tokens - video_tokens - audio_tokens
@@ -65,25 +73,8 @@ class Qwen3OmniAdapter(ModelAdapter):
             token_id_bytes=(input_ids.numel() * input_ids.element_size()),
             kv_cache_bytes=total_tokens * kv_bytes_per_token,
             kv_cache_bytes_per_token=kv_bytes_per_token,
+            segments=segments,
         )
-
-    def _count_content_text_tokens(self, messages: list[Message]) -> int:
-        tokenizer = self.processor.tokenizer
-        count = 0
-
-        for message in messages:
-            for item in message.content:
-                if isinstance(item, Text):
-                    count += len(tokenizer.encode(item.text, add_special_tokens=False))
-
-        return count
-
-    def _count_placeholder_tokens(
-        self, input_ids: torch.Tensor, attention_mask: torch.Tensor, token: str
-    ) -> int:
-        token_id = self.processor.tokenizer.convert_tokens_to_ids(token)
-
-        return int(((input_ids == token_id) & attention_mask).sum().item())
 
     def _kv_cache_bytes_per_token(
         self,

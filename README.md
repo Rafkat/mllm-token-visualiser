@@ -248,6 +248,7 @@ from mllm_tokens import Analyzer, Audio, Image, Message, Text, Video
 
 analyzer = Analyzer.from_pretrained(
     "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-FP8",
+    trust_remote_code=True
 )
 
 messages = [
