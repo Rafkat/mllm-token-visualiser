@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from typing import Any
 
 from mllm_tokens.adapters.base import ModelAdapter
@@ -7,14 +6,6 @@ from mllm_tokens.inputs import Message
 from mllm_tokens.report import TokenReport, TokenSegment
 
 GEMMA_AUDIO_VARIANTS = ("e2b", "e4b", "12b")
-
-
-@dataclass(frozen=True, slots=True)
-class _MediaSource:
-    message_index: int
-    content_index: int
-    role: str
-    modality: str
 
 
 class Gemma4Adapter(ModelAdapter):

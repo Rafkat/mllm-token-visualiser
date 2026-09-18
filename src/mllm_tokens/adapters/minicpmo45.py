@@ -17,8 +17,8 @@ class MiniCPMo45Adapter(ModelAdapter):
         self,
         messages: list[Message],
         *,
-        add_generation_prompt: bool,
-        kv_cache_dtype: str,
+        add_generation_prompt: bool = True,
+        kv_cache_dtype: str = "bfloat16",
     ) -> TokenReport:
         normalized_messages = self._normalize_messages(messages)
 
@@ -45,11 +45,10 @@ class MiniCPMo45Adapter(ModelAdapter):
             inputs.audio_bounds[0],
             bound_name="audio",
         )
-        segments = tuple(
-            sorted(
-                (*text_segments, *visual_segments, *audio_segments),
-                key=lambda segment: (segment.message_index, segment.content_index),
-            )
+        segments = self._sort_segments(
+            text_segments,
+            visual_segments,
+            audio_segments,
         )
 
         text_tokens = self._sum_segment_tokens(segments, "text")

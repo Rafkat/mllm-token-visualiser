@@ -9,6 +9,7 @@ from mllm_tokens.report import TokenReport, TokenSegment
 MediaModality = Literal["image", "video", "audio"]
 SegmentModality = Literal["text", "image", "video", "audio"]
 
+
 @dataclass(frozen=True, slots=True)
 class MediaSource:
     message_index: int
@@ -90,7 +91,6 @@ class ModelAdapter(ABC):
                 if content["type"] == "audio":
                     raise ValueError("Not supported input type: audio")
 
-
     def _build_text_segments(self, messages: list[Message]) -> tuple[TokenSegment, ...]:
         tokenizer = self.processor.tokenizer
         segments = []
@@ -117,7 +117,7 @@ class ModelAdapter(ABC):
                     )
                 )
 
-        return segments
+        return tuple(segments)
 
     @staticmethod
     def _build_media_sources(
@@ -148,8 +148,8 @@ class ModelAdapter(ABC):
 
     @staticmethod
     def _build_segments_from_counts(
-        sources: tuple[MediaSource, ...],
-        token_counts: list[int],
+        sources: Sequence[MediaSource],
+        token_counts: Sequence[int],
         *,
         source_name: str,
     ) -> tuple[TokenSegment, ...]:
@@ -220,7 +220,7 @@ class ModelAdapter(ABC):
 
     @staticmethod
     def _sum_segment_tokens(
-        segments: tuple[TokenSegment, ...],
+        segments: Sequence[TokenSegment],
         modality: SegmentModality,
     ) -> int:
         return sum(
