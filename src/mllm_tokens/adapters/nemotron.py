@@ -8,8 +8,8 @@ import torch
 
 from mllm_tokens.adapters.base import ModelAdapter
 from mllm_tokens.adapters.dtype_bytes import DTYPE_BYTES
-from mllm_tokens.inputs import Message, Text
-from mllm_tokens.report import TokenReport
+from mllm_tokens.inputs import Message
+from mllm_tokens.report import TokenReport, TokenSegment
 
 
 class NemotronAdapter(ModelAdapter):
@@ -22,7 +22,7 @@ class NemotronAdapter(ModelAdapter):
     ) -> TokenReport:
         normalized_messages = self._normalize_messages(messages)
 
-        self.check_video_input(normalized_messages)
+        self._check_only_one_video_input(normalized_messages)
 
         (
             prompt_messages,
@@ -65,24 +65,37 @@ class NemotronAdapter(ModelAdapter):
 
         total_tokens = int(attention_mask.sum().item())
 
-        text_tokens = self._count_content_text_tokens(messages)
-
-        image_tokens = self._count_placeholder_tokens(
+        text_segments = self._build_text_segments(messages)
+        image_segments = self._build_placeholder_segments(
+            messages,
             input_ids,
             attention_mask,
-            getattr(self.processor, "image_token", "<image>"),
+            modality="image",
+            token=getattr(self.processor, "image_token", "<image>"),
         )
-
-        video_tokens = self._count_video_tokens(
+        video_segments = self._build_video_segments(
+            messages,
             video=video,
             video_metadata=video_metadata,
         )
-
-        audio_tokens = self._count_placeholder_tokens(
+        audio_segments = self._build_placeholder_segments(
+            messages,
             input_ids,
             attention_mask,
-            getattr(self.processor, "audio_token", "<so_embedding>"),
+            modality="audio",
+            token=getattr(self.processor, "audio_token", "<so_embedding>"),
         )
+        segments = self._sort_segments(
+            text_segments,
+            image_segments,
+            video_segments,
+            audio_segments,
+        )
+
+        text_tokens = self._sum_segment_tokens(segments, "text")
+        image_tokens = self._sum_segment_tokens(segments, "image")
+        video_tokens = self._sum_segment_tokens(segments, "video")
+        audio_tokens = self._sum_segment_tokens(segments, "audio")
 
         template_tokens = (
             total_tokens - text_tokens - image_tokens - video_tokens - audio_tokens
@@ -101,36 +114,33 @@ class NemotronAdapter(ModelAdapter):
             token_id_bytes=(input_ids.numel() * input_ids.element_size()),
             kv_cache_bytes=total_tokens * kv_bytes_per_token,
             kv_cache_bytes_per_token=kv_bytes_per_token,
+            segments=segments,
         )
 
-    def _count_content_text_tokens(
+    def _build_video_segments(
         self,
         messages: list[Message],
-    ) -> int:
-        tokenizer = self.processor.tokenizer
-        count = 0
+        *,
+        video: np.ndarray | torch.Tensor | None,
+        video_metadata: SimpleNamespace | None,
+    ) -> tuple[TokenSegment, ...]:
+        sources = self._build_media_sources(messages, "video")
+        token_counts = (
+            []
+            if video is None
+            else [
+                self._count_video_tokens(
+                    video=video,
+                    video_metadata=video_metadata,
+                )
+            ]
+        )
 
-        for message in messages:
-            for item in message.content:
-                if isinstance(item, Text):
-                    count += len(
-                        tokenizer.encode(
-                            item.text,
-                            add_special_tokens=False,
-                        )
-                    )
-
-        return count
-
-    def _count_placeholder_tokens(
-        self,
-        input_ids: torch.Tensor,
-        attention_mask: torch.Tensor,
-        token: str,
-    ) -> int:
-        token_id = self.processor.tokenizer.convert_tokens_to_ids(token)
-
-        return int(((input_ids == token_id) & attention_mask).sum().item())
+        return self._build_segments_from_counts(
+            sources,
+            token_counts,
+            source_name="video token counts",
+        )
 
     def _count_video_tokens(
         self,
@@ -418,3 +428,18 @@ class NemotronAdapter(ModelAdapter):
             video,
             video_metadata,
         )
+
+    @staticmethod
+    def _check_only_one_video_input(normalized_messages: list[dict]) -> None:
+        video_counter = 0
+        for message in normalized_messages:
+            for content in message["content"]:
+                if content["type"] == "video":
+                    video_counter += 1
+
+        if video_counter > 1:
+            raise ValueError(
+                "This model currently supports only one video per request. "
+                "The Nemotron processor does not correctly expand "
+                "multiple <video> placeholders."
+            )
