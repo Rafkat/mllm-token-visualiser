@@ -49,6 +49,7 @@ This project is still pre-`1.0`; its public API and report schema may evolve.
 | `token_id_bytes` | Memory occupied by the `input_ids` tensor |
 | `kv_cache_bytes` | Estimated KV-cache memory for the analysed input |
 | `kv_cache_bytes_per_token` | Estimated decoder KV-cache cost per active context position |
+| `segments` | Per-content token counts with message index, content index, role, and modality |
 
 KV-cache values are architectural estimates. They exclude model weights, encoder activations, temporary attention buffers, framework overhead, and allocator fragmentation.
 
@@ -104,10 +105,10 @@ Build the distribution:
 uv build
 ```
 
-Install version 0.5.0 into another uv project:
+Install version 0.6.0 into another uv project:
 
 ```bash
-uv add ../mllm-token-visualiser/dist/mllm_token_visualiser-0.5.0-py3-none-any.whl
+uv add ../mllm-token-visualiser/dist/mllm_token_visualiser-0.6.0-py3-none-any.whl
 ```
 
 ### FFmpeg and video support
@@ -282,6 +283,21 @@ For a conventional decoder transformer, the approximate cache cost per active co
 
 The factor `2` represents keys and values. Query heads are not used because queries are not retained in the KV cache.
 
+## Segments
+
+```
+report = analyzer.analyze(messages)
+
+for segment in report.segments:
+    print(
+        segment.message_index,
+        segment.content_index,
+        segment.role,
+        segment.modality,
+        segment.tokens,
+    )
+```
+
 ## Public API
 
 ```python
@@ -291,9 +307,10 @@ from mllm_tokens import (
     Image,
     Message,
     Text,
-    TokenReport,
     Video,
     analyze,
+    TokenSegment,
+    TokenReport
 )
 ```
 
@@ -319,6 +336,7 @@ src/mllm_tokens/
     ├── gemma4.py
     ├── minicpmo45.py
     ├── nematron.py
+    ├── qwen_adapter.py
     ├── qwen3omni.py
     └── qwen3vl.py
 ```
@@ -366,7 +384,7 @@ mkdir test_project
 cd test_project
 uv init
 uv python pin 3.12
-uv add ../mllm-token-visualiser/dist/mllm_token_visualiser-0.5.0-py3-none-any.whl
+uv add ../mllm-token-visualiser/dist/mllm_token_visualiser-0.6.0-py3-none-any.whl
 uv run python -c "import mllm_tokens; print(mllm_tokens.__file__)"
 ```
 
