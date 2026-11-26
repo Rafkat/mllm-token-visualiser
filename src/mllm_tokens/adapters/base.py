@@ -3,6 +3,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from mllm_tokens.adapters.dtype_bytes import DTYPE_BYTES
 from mllm_tokens.inputs import Audio, Image, Message, Text, Video
 from mllm_tokens.report import TokenReport, TokenSegment
 
@@ -33,6 +34,73 @@ class ModelAdapter(ABC):
         kv_cache_dtype: str = "bfloat16",
     ) -> TokenReport:
         """Preprocess the message and produce token statistics."""
+
+    def _build_report(
+        self,
+        *,
+        input_ids: Any,
+        attention_mask: Any,
+        segments: Sequence[TokenSegment],
+        kv_cache_dtype: str,
+    ) -> TokenReport:
+        """Aggregate per-segment counts into a report.
+
+        ``template_tokens`` is every active position not attributed to a
+        text or media segment.
+        """
+        total_tokens = int(attention_mask.sum().item())
+
+        text_tokens = self._sum_segment_tokens(segments, "text")
+        image_tokens = self._sum_segment_tokens(segments, "image")
+        video_tokens = self._sum_segment_tokens(segments, "video")
+        audio_tokens = self._sum_segment_tokens(segments, "audio")
+
+        template_tokens = (
+            total_tokens - text_tokens - image_tokens - video_tokens - audio_tokens
+        )
+
+        kv_bytes_per_token = self._kv_cache_bytes_per_token(kv_cache_dtype)
+
+        return TokenReport(
+            model_id=self.model_id,
+            total_tokens=total_tokens,
+            text_tokens=text_tokens,
+            image_tokens=image_tokens,
+            video_tokens=video_tokens,
+            audio_tokens=audio_tokens,
+            template_tokens=template_tokens,
+            token_id_bytes=input_ids.numel() * input_ids.element_size(),
+            kv_cache_bytes=total_tokens * kv_bytes_per_token,
+            kv_cache_bytes_per_token=kv_bytes_per_token,
+            segments=tuple(segments),
+        )
+
+    def _kv_cache_bytes_per_token(self, dtype: str) -> int:
+        """Estimate decoder KV-cache bytes per active context position.
+
+        ``2 x cached_layers x num_key_value_heads x head_dim x dtype_bytes``
+        """
+        if dtype not in DTYPE_BYTES:
+            raise ValueError(f"Unsupported KV-cache dtype: {dtype}")
+
+        config = self._kv_cache_config()
+        num_layers = self._num_kv_cache_layers(config)
+        num_attention_heads = config.num_attention_heads
+        num_kv_heads = getattr(config, "num_key_value_heads", num_attention_heads)
+        head_dim = getattr(
+            config, "head_dim", config.hidden_size // num_attention_heads
+        )
+
+        return 2 * num_layers * num_kv_heads * head_dim * DTYPE_BYTES[dtype]
+
+    def _kv_cache_config(self) -> Any:
+        """Return the decoder configuration that owns the KV cache."""
+        return getattr(self.config, "text_config", self.config)
+
+    @staticmethod
+    def _num_kv_cache_layers(config: Any) -> int:
+        """Return the number of decoder layers that keep keys and values."""
+        return config.num_hidden_layers
 
     @staticmethod
     def _normalize_messages(

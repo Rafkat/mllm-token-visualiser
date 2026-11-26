@@ -310,7 +310,7 @@ from mllm_tokens import (
     Video,
     analyze,
     TokenSegment,
-    TokenReport
+    TokenReport,
 )
 ```
 
@@ -342,6 +342,16 @@ src/mllm_tokens/
 ```
 
 Each model family owns processor conversion and token accounting inside an adapter. `Analyzer` depends on the common `ModelAdapter` contract, so model support remains additive.
+
+`Analyzer.from_pretrained()` selects the adapter from the checkpoint's `config.model_type`, before the processor is loaded, so local paths and renamed fine-tunes resolve correctly and unsupported models fail early. Checkpoints whose `model_type` is not recognised fall back to matching the model ID. `minicpmo` is shared by several MiniCPM-o generations, so it additionally requires `config.version == "4.5"`.
+
+| Adapter | `config.model_type` |
+|---|---|
+| Qwen3-VL | `qwen3_vl`, `qwen3_vl_moe` |
+| Qwen3-Omni | `qwen3_omni_moe` |
+| MiniCPM-o 4.5 | `minicpmo` (version `4.5`) |
+| Gemma 4 | `gemma4` |
+| Nemotron 3 Nano Omni | `NemotronH_Nano_Omni_Reasoning_V3` |
 
 ## Repository layout
 
