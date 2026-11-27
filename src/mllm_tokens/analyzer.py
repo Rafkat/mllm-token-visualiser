@@ -11,7 +11,7 @@ from mllm_tokens.inputs import (
     Text,
     Video,
 )
-from mllm_tokens.registry import get_adapter_class
+from mllm_tokens.registry import resolve_adapter_class
 from mllm_tokens.report import TokenReport
 
 
@@ -27,11 +27,12 @@ class Analyzer:
             model_id, trust_remote_code=trust_remote_code
         )
 
+        # Resolve before loading the processor so unsupported models fail fast.
+        adapter_class = resolve_adapter_class(model_id, config)
+
         processor = AutoProcessor.from_pretrained(
             model_id, trust_remote_code=trust_remote_code, **processor_kwargs
         )
-
-        adapter_class = get_adapter_class(model_id)
 
         adapter = adapter_class(
             model_id=model_id,
