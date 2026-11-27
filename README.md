@@ -66,16 +66,16 @@ KV-cache values are architectural estimates. They exclude model weights, encoder
 
 ```python
 for span in report.spans:
-    print(span.start, span.end, span.kind, span.message_index, span.content_index, repr(span.text))
+    print(span.start, span.end, span.kind, span.content_index, repr(span.text))
 ```
 
 ```text
-0     3     template None None '<|im_start|>system\n'
-3     9     text     0    0    'You are a helpful assistant.'
+0     3     template None '<|im_start|>system\n'
+3     9     text     0    'You are a helpful assistant.'
 ...
-17    18    template None None '<|vision_start|>'
-18    210   image    1    1    None
-210   211   template None None '<|vision_end|>'
+17    18    template None '<|vision_start|>'
+18    210   image    1    None
+210   211   template None '<|vision_end|>'
 ```
 
 - Media spans come from the processor's placeholder positions and are exact. One item can produce several spans, for example one per video frame group.
@@ -102,13 +102,13 @@ Source properties (`width`, `height`, `duration_seconds`, `source_fps`, `sample_
 ### Breakdowns and export
 
 ```python
-report.tokens_by_kind()          # {'text': ..., 'image': ..., 'template': ...}
-report.token_shares()            # fraction of total_tokens per kind
+report.tokens_by_kind()  # {'text': ..., 'image': ..., 'template': ...}
+report.token_shares()  # fraction of total_tokens per kind
 report.kv_cache_bytes_by_kind()  # estimated KV-cache bytes per kind
 
-report.to_json()       # versioned JSON with derived breakdowns and field accuracy
+report.to_json()  # versioned JSON with derived breakdowns and field accuracy
 report.segments_csv()  # one row per content item
-report.spans_csv()     # one row per span
+report.spans_csv()  # one row per span
 ```
 
 `to_json()` includes `schema_version` and a `field_accuracy` map that labels each count as processor-exact, tokenizer-based, derived, or estimated.
