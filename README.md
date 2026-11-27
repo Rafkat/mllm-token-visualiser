@@ -253,6 +253,38 @@ report.print_dict()
 
 `Analyzer.from_pretrained()` loads the processor and configuration needed for analysis, not complete model weights. Reuse an `Analyzer` across inputs to avoid repeatedly loading processor metadata.
 
+## Command line
+
+Installing the package adds `mllm-tokens` (also available as `python -m mllm_tokens`). Content is given in conversation order as positional arguments: a media file path (the modality comes from its extension), `image:PATH`, `video:PATH`, `audio:PATH`, `text:TEXT`, or any other text.
+
+```bash
+# Terminal view (add --show-template to list decoded template spans)
+mllm-tokens analyze Qwen/Qwen3-VL-8B-Instruct examples/assets/image_sample.jpg "What is this?"
+
+# Other formats: --format json|html|spans-csv|segments-csv, or inferred from -o
+mllm-tokens analyze Qwen/Qwen3-VL-8B-Instruct clip.mp4 "Describe." -o report.html
+mllm-tokens analyze google/gemma-4-e4b-it --system "Be brief." photo.png "Caption it." -f json
+
+# Same input, several models (table, --format json, or --format csv)
+mllm-tokens compare examples/assets/video_sample.mp4 "Describe the video." \
+  -m Qwen/Qwen3-VL-8B-Instruct -m google/gemma-4-e4b-it \
+  -m nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-FP8 --trust-remote-code
+```
+
+Other options: `--trust-remote-code` (MiniCPM-o and Nemotron processors), `--kv-dtype`, `--no-generation-prompt`, and `--embed-media` for HTML. In `compare`, a model that fails (for example, one that does not accept the given modality) is shown as an error row and the others are still compared.
+
+Output of the `compare` command above with the 25 s sample video (processor and config files only, transformers 5.14.1):
+
+```text
+Tokens by kind
+ Model                                               Total  Text   Video  Template  KV cache (est.)  Warnings
+ Qwen/Qwen3-VL-8B-Instruct                          11,429     4  11,200       225         1.57 GiB         0
+ google/gemma-4-e4b-it                               2,220     4   1,920       296       182.11 MiB         0
+ nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-FP8  13,971     5  13,056       910        81.86 MiB       ⚠ 1
+```
+
+Nemotron's warning explains how its video placeholders are rebuilt (see the Nemotron section); of its 13,056 video tokens, 3,916 remain after Efficient Video Sampling.
+
 ## Interleaved multimodal input
 
 Content order is preserved:
@@ -438,7 +470,9 @@ import:       mllm_tokens
 ```text
 src/mllm_tokens/
 ├── __init__.py
+├── __main__.py
 ├── analyzer.py
+├── cli.py
 ├── display.py
 ├── html_report.py
 ├── inputs.py
@@ -544,9 +578,9 @@ The printed path should be inside `test_project/.venv/.../site-packages/`.
 - [ ] Report token growth per streaming chunk or turn
 - [ ] Estimate KV-cache growth and retained context during streaming inference
 - [ ] Separate input-context, generated-text, and generated-audio accounting where the model exposes distinct generation pipelines
-- [ ] Add adapter-level unit and integration fixtures
-- [ ] Add a CLI built on the library API
-- [ ] Add richer terminal visualisation and export formats
+- [x] Add adapter-level unit and integration fixtures
+- [x] Add a CLI built on the library API
+- [x] Add richer terminal visualisation and export formats
 - [ ] Add further MLLM adapters
 - [ ] Stabilise the public API and publish to PyPI
 

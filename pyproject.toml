@@ -20,6 +20,9 @@ dependencies = [
     "typer>=0.12",
 ]
 
+[project.scripts]
+mllm-tokens = "mllm_tokens.cli:main"
+
 [project.optional-dependencies]
 omni = [
     "numba>=0.59",
