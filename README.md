@@ -50,8 +50,68 @@ This project is still pre-`1.0`; its public API and report schema may evolve.
 | `kv_cache_bytes` | Estimated KV-cache memory for the analysed input |
 | `kv_cache_bytes_per_token` | Estimated decoder KV-cache cost per active context position |
 | `segments` | Per-content token counts with message index, content index, role, and modality |
+| `spans` | The whole active sequence as contiguous runs: `text`, `image`, `video`, `audio`, or `template`, with the source item and decoded text |
+| `media` | One entry per image/video/audio: tokens, interior overhead, placeholder groups, source-file metadata, and processor details |
+| `metadata` | Library/Transformers versions, adapter, processor class, generation-prompt flag, and KV-cache dimensions |
+| `assumptions` | The accounting and estimation assumptions that apply to this report |
+| `warnings` | Problems detected during analysis, for example a span that could not be aligned |
 
 KV-cache values are architectural estimates. They exclude model weights, encoder activations, temporary attention buffers, framework overhead, and allocator fragmentation.
+
+## Detailed report
+
+### Token spans
+
+`report.spans` maps every active position to its origin, in sequence order. Spans always cover the whole active sequence exactly once:
+
+```python
+for span in report.spans:
+    print(span.start, span.end, span.kind, span.message_index, span.content_index, repr(span.text))
+```
+
+```text
+0     3     template None None '<|im_start|>system\n'
+3     9     text     0    0    'You are a helpful assistant.'
+...
+17    18    template None None '<|vision_start|>'
+18    210   image    1    1    None
+210   211   template None None '<|vision_end|>'
+```
+
+- Media spans come from the processor's placeholder positions and are exact. One item can produce several spans, for example one per video frame group.
+- Template positions between the first and last placeholder of one media item, such as frame timestamps, are attributed to that item (`message_index`/`content_index` set, `kind == "template"`). The total appears as `MediaDetail.overhead_tokens`.
+- Each `Text` item is located in conversation order. `exact` is `False` when its isolated tokenization does not appear verbatim because the tokenizer merged it with neighbouring template characters (for example `":"` + newline). The item is then located by its characters and the span includes the merged token.
+- If spans cannot be aligned, the report still contains all counts and explains the problem in `warnings`.
+
+### Media details
+
+```python
+for item in report.media:
+    print(item.modality, item.tokens, item.overhead_tokens, item.properties)
+```
+
+Measured with `Qwen/Qwen3-VL-8B-Instruct` and Transformers 5.14.1 on `examples/assets/video_sample.mp4` (1024×432, 25.1 s, 23.976 fps):
+
+```text
+video 11200 207 {'duration_seconds': 25.108, 'grid_thw': [25, 28, 64], 'frames_sampled': 50,
+                 'tokens_per_frame_group': 448, 'tokens_per_second': 446.07, ...}
+```
+
+Source properties (`width`, `height`, `duration_seconds`, `source_fps`, `sample_rate`) are read from file headers only. Processor properties depend on the model family: patch grids for Qwen, pooled patches for Gemma 4, slices and sampled frames for MiniCPM-o, and tiles and sampled frames for Nemotron.
+
+### Breakdowns and export
+
+```python
+report.tokens_by_kind()          # {'text': ..., 'image': ..., 'template': ...}
+report.token_shares()            # fraction of total_tokens per kind
+report.kv_cache_bytes_by_kind()  # estimated KV-cache bytes per kind
+
+report.to_json()       # versioned JSON with derived breakdowns and field accuracy
+report.segments_csv()  # one row per content item
+report.spans_csv()     # one row per span
+```
+
+`to_json()` includes `schema_version` and a `field_accuracy` map that labels each count as processor-exact, tokenizer-based, derived, or estimated.
 
 ## Why special-token filtering is not enough
 
@@ -309,8 +369,10 @@ from mllm_tokens import (
     Text,
     Video,
     analyze,
-    TokenSegment,
+    MediaDetail,
     TokenReport,
+    TokenSegment,
+    TokenSpan,
 )
 ```
 
@@ -328,20 +390,22 @@ src/mllm_tokens/
 ├── __init__.py
 ├── analyzer.py
 ├── inputs.py
+├── media.py
 ├── registry.py
 ├── report.py
+├── spans.py
 └── adapters/
     ├── base.py
     ├── dtype_bytes.py
     ├── gemma4.py
     ├── minicpmo45.py
-    ├── nematron.py
+    ├── nemotron.py
     ├── qwen_adapter.py
     ├── qwen3omni.py
     └── qwen3vl.py
 ```
 
-Each model family owns processor conversion and token accounting inside an adapter. `Analyzer` depends on the common `ModelAdapter` contract, so model support remains additive.
+Each model family owns processor conversion and token accounting inside an adapter. Adapters report placeholder positions and processor details; `spans.py` (model-independent position mapping) and `media.py` (file-header probing) turn them into the detailed report. `Analyzer` depends on the common `ModelAdapter` contract, so model support remains additive.
 
 `Analyzer.from_pretrained()` selects the adapter from the checkpoint's `config.model_type`, before the processor is loaded, so local paths and renamed fine-tunes resolve correctly and unsupported models fail early. Checkpoints whose `model_type` is not recognised fall back to matching the model ID. `minicpmo` is shared by several MiniCPM-o generations, so it additionally requires `config.version == "4.5"`.
 
@@ -378,6 +442,16 @@ uv run ruff check .
 uv run pytest
 uv build
 ```
+
+Opt-in checks against real Hugging Face processors download processor and configuration files only (no weights):
+
+```bash
+MLLM_TOKENS_INTEGRATION=1 uv run pytest tests/integration
+# MiniCPM-o and Nemotron processors execute remote code:
+MLLM_TOKENS_INTEGRATION=1 MLLM_TOKENS_TRUST_REMOTE_CODE=1 uv run pytest tests/integration
+```
+
+`tests/fixtures/spans/` holds span-builder inputs recorded from real processors with `scripts/record_span_fixtures.py`; `tests/test_span_fixtures.py` replays them offline.
 
 Verify the public import:
 

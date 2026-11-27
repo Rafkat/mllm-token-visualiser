@@ -29,9 +29,18 @@ class Qwen3VLAdapter(QwenAdapter):
             self._build_grid_segments(messages, inputs, "video"),
         )
 
+        input_ids = inputs["input_ids"]
+
         return self._build_report(
-            input_ids=inputs["input_ids"],
+            input_ids=input_ids,
             attention_mask=inputs["attention_mask"].bool(),
             segments=segments,
             kv_cache_dtype=kv_cache_dtype,
+            messages=messages,
+            media_masks=self._qwen_media_masks(input_ids, ("image", "video")),
+            media_properties={
+                **self._grid_properties(messages, inputs, "image"),
+                **self._grid_properties(messages, inputs, "video"),
+            },
+            add_generation_prompt=add_generation_prompt,
         )

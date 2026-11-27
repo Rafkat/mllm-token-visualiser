@@ -6,6 +6,11 @@ from mllm_tokens.report import TokenReport
 
 
 class Qwen3OmniAdapter(QwenAdapter):
+    ASSUMPTIONS = QwenAdapter.ASSUMPTIONS + (
+        "KV cache covers the Thinker text decoder only; Talker generation "
+        "memory is not included.",
+    )
+
     def analyze(
         self,
         messages: list[Message],
@@ -44,6 +49,13 @@ class Qwen3OmniAdapter(QwenAdapter):
             attention_mask=attention_mask,
             segments=segments,
             kv_cache_dtype=kv_cache_dtype,
+            messages=messages,
+            media_masks=self._qwen_media_masks(input_ids, ("image", "video", "audio")),
+            media_properties={
+                **self._grid_properties(messages, inputs, "image"),
+                **self._grid_properties(messages, inputs, "video"),
+            },
+            add_generation_prompt=add_generation_prompt,
         )
 
     def _kv_cache_config(self) -> Any:

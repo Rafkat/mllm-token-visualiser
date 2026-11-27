@@ -10,8 +10,18 @@ from mllm_tokens.adapters.base import ModelAdapter
 from mllm_tokens.inputs import Message
 from mllm_tokens.report import TokenReport, TokenSegment
 
+VIDEO_SAMPLE_FPS = 2.0
+VIDEO_MAX_FRAMES = 256
+
 
 class NemotronAdapter(ModelAdapter):
+    ASSUMPTIONS = (
+        f"Videos are sampled with PyAV at {VIDEO_SAMPLE_FPS:g} fps, up to "
+        f"{VIDEO_MAX_FRAMES} frames; only one video per request is supported.",
+        "KV cache counts only attention layers in hybrid_override_pattern; "
+        "recurrent Mamba-2 state is not included.",
+    )
+
     def analyze(
         self,
         messages: list[Message],
@@ -90,7 +100,77 @@ class NemotronAdapter(ModelAdapter):
             attention_mask=attention_mask,
             segments=segments,
             kv_cache_dtype=kv_cache_dtype,
+            messages=messages,
+            media_masks=self._nemotron_media_masks(input_ids, video is not None),
+            media_properties=self._nemotron_media_properties(messages, video_metadata),
+            add_generation_prompt=add_generation_prompt,
+            warnings=self._video_placeholder_warnings(video is not None),
         )
+
+    def _nemotron_media_masks(
+        self, input_ids: torch.Tensor, has_video: bool
+    ) -> dict[str, torch.Tensor]:
+        image_mask = self._placeholder_mask(input_ids, "image", "<image>")
+        masks = {
+            "image": image_mask,
+            "audio": self._placeholder_mask(input_ids, "audio", "<so_embedding>"),
+        }
+
+        if has_video:
+            # Video frames are wrapped in the same <img>...</img> blocks as
+            # images; every non-image position inside a block is video. A
+            # malformed block structure leaves video unmapped (a warning),
+            # rather than failing the analysis.
+            try:
+                interior = self._image_block_interior(input_ids[0].tolist())
+            except RuntimeError:
+                return masks
+            masks["video"] = torch.tensor(interior, dtype=torch.bool) & ~image_mask
+
+        return masks
+
+    def _nemotron_media_properties(
+        self,
+        messages: list[Message],
+        video_metadata: SimpleNamespace | None,
+    ) -> dict[tuple[int, int], dict[str, Any]]:
+        properties: dict[tuple[int, int], dict[str, Any]] = {}
+
+        tokens_per_tile = getattr(
+            getattr(self.processor, "image_processor", None), "num_image_token", None
+        )
+        if isinstance(tokens_per_tile, int):
+            for source in self._build_media_sources(messages, "image"):
+                properties[(source.message_index, source.content_index)] = {
+                    "tokens_per_tile": tokens_per_tile
+                }
+
+        if video_metadata is not None:
+            for source in self._build_media_sources(messages, "video"):
+                properties[(source.message_index, source.content_index)] = {
+                    "frames_sampled": len(video_metadata.frames_indices),
+                    "sample_fps": VIDEO_SAMPLE_FPS,
+                    "max_frames": VIDEO_MAX_FRAMES,
+                }
+
+        return properties
+
+    def _video_placeholder_warnings(self, has_video: bool) -> tuple[str, ...]:
+        if not has_video:
+            return ()
+
+        token = getattr(self.processor, "video_token", "<video>")
+        token_ids = self.processor.tokenizer.encode(token, add_special_tokens=False)
+        if isinstance(token_ids, list) and len(token_ids) != 1:
+            return (
+                f"The tokenizer splits the video placeholder {token!r} into "
+                f"{len(token_ids)} tokens, so each frame's placeholders are "
+                "tokenized as text fragments. video_tokens reflects the "
+                "processor output, which may not match the model's intended "
+                "video context.",
+            )
+
+        return ()
 
     def _build_video_segments(
         self,
@@ -150,27 +230,49 @@ class NemotronAdapter(ModelAdapter):
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
     ) -> int:
+        active_ids = input_ids[0][attention_mask[0].bool()].tolist()
+
+        return sum(self._image_block_interior(active_ids))
+
+    def _image_block_interior(self, token_ids: list[int]) -> list[bool]:
+        """Mark positions strictly inside ``<img>...</img>`` blocks."""
+        start_id, end_id = self._image_block_token_ids()
+
+        interior = []
+        inside_block = False
+
+        for token_id in token_ids:
+            if token_id == start_id:
+                if inside_block:
+                    raise RuntimeError("Nested <img> blocks detected")
+
+                inside_block = True
+                interior.append(False)
+                continue
+
+            if token_id == end_id:
+                if not inside_block:
+                    raise RuntimeError("Unexpected </img> token")
+
+                inside_block = False
+                interior.append(False)
+                continue
+
+            interior.append(inside_block)
+
+        if inside_block:
+            raise RuntimeError("Unclosed <img> block detected")
+
+        return interior
+
+    def _image_block_token_ids(self) -> tuple[int, int]:
         tokenizer = self.processor.tokenizer
 
-        start_token = getattr(
-            self.processor,
-            "image_start_token",
-            "<img>",
-        )
-        end_token = getattr(
-            self.processor,
-            "image_end_token",
-            "</img>",
-        )
+        start_token = getattr(self.processor, "image_start_token", "<img>")
+        end_token = getattr(self.processor, "image_end_token", "</img>")
 
-        start_ids = tokenizer.encode(
-            start_token,
-            add_special_tokens=False,
-        )
-        end_ids = tokenizer.encode(
-            end_token,
-            add_special_tokens=False,
-        )
+        start_ids = tokenizer.encode(start_token, add_special_tokens=False)
+        end_ids = tokenizer.encode(end_token, add_special_tokens=False)
 
         if len(start_ids) != 1:
             raise RuntimeError(
@@ -183,36 +285,7 @@ class NemotronAdapter(ModelAdapter):
                 f"Nemotron image end token is not atomic: {end_token!r} -> {end_ids}"
             )
 
-        start_id = start_ids[0]
-        end_id = end_ids[0]
-
-        active_ids = input_ids[0][attention_mask[0].bool()]
-
-        count = 0
-        inside_block = False
-
-        for token_id in active_ids.tolist():
-            if token_id == start_id:
-                if inside_block:
-                    raise RuntimeError("Nested <img> blocks detected")
-
-                inside_block = True
-                continue
-
-            if token_id == end_id:
-                if not inside_block:
-                    raise RuntimeError("Unexpected </img> token")
-
-                inside_block = False
-                continue
-
-            if inside_block:
-                count += 1
-
-        if inside_block:
-            raise RuntimeError("Unclosed <img> block detected")
-
-        return count
+        return start_ids[0], end_ids[0]
 
     def _kv_cache_config(self) -> Any:
         return self.config.llm_config
@@ -228,8 +301,8 @@ class NemotronAdapter(ModelAdapter):
     def load_video(
         video_path: str | Path,
         *,
-        fps: float = 2.0,
-        max_frames: int | None = 256,
+        fps: float = VIDEO_SAMPLE_FPS,
+        max_frames: int | None = VIDEO_MAX_FRAMES,
     ) -> tuple[np.ndarray, SimpleNamespace]:
         video_path = Path(video_path)
 

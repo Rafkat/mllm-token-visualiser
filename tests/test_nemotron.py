@@ -4,6 +4,7 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 import torch
+from fakes import FakeTokenizer
 
 from mllm_tokens import Audio, Image, Message, Text, TokenSegment, Video
 from mllm_tokens.adapters.nemotron import NemotronAdapter
@@ -21,6 +22,8 @@ def test_nemotron_builds_all_modality_segments() -> None:
         tokenizer=tokenizer,
         image_token="<image>",
         audio_token="<so_embedding>",
+        image_start_token="<img>",
+        image_end_token="</img>",
     )
     input_ids = torch.zeros((1, 80), dtype=torch.int64)
     input_ids[0, 10:18] = 41
@@ -81,3 +84,59 @@ def test_nemotron_rejects_multiple_videos() -> None:
 
     with pytest.raises(ValueError, match="only one video"):
         adapter.analyze([Message.user(Video("first.mp4"), Video("second.mp4"))])
+
+
+def make_nemotron_adapter(vocab: dict[str, int]) -> NemotronAdapter:
+    processor = SimpleNamespace(
+        tokenizer=FakeTokenizer(vocab),
+        image_token="<image>",
+        image_token_id=18,
+        audio_token="<so_embedding>",
+        audio_token_id=27,
+        video_token="<video>",
+        image_start_token="<img>",
+        image_end_token="</img>",
+    )
+    return NemotronAdapter("nemotron", processor, Mock())
+
+
+def test_nemotron_video_mask_is_non_image_positions_inside_img_blocks() -> None:
+    adapter = make_nemotron_adapter({"<img>": 19, "</img>": 20, "<video>": 30})
+    # image block, then two video frames whose placeholders are fragments.
+    input_ids = torch.tensor([[19, 18, 18, 20, 5, 19, 31, 32, 20, 6, 19, 31, 32, 20]])
+
+    masks = adapter._nemotron_media_masks(input_ids, has_video=True)
+
+    assert masks["image"].nonzero().flatten().tolist() == [1, 2]
+    assert masks["video"].nonzero().flatten().tolist() == [6, 7, 11, 12]
+    assert not masks["audio"].any()
+
+
+def test_nemotron_warns_when_video_placeholder_is_not_atomic() -> None:
+    vocab = {"<img>": 19, "</img>": 20, "<": 1, "video": 2, ">": 3}
+    adapter = make_nemotron_adapter(vocab)
+    adapter.processor.tokenizer.encode = lambda text, **_: (
+        [1, 2, 3] if text == "<video>" else [vocab[text]]
+    )
+
+    (warning,) = adapter._video_placeholder_warnings(has_video=True)
+
+    assert "splits the video placeholder '<video>' into 3 tokens" in warning
+    assert adapter._video_placeholder_warnings(has_video=False) == ()
+
+
+def test_nemotron_video_properties_record_sampling() -> None:
+    adapter = make_nemotron_adapter({})
+    adapter.processor.image_processor = SimpleNamespace(num_image_token=256)
+    metadata = SimpleNamespace(
+        fps=25.0, frames_indices=[0, 12, 25], total_num_frames=50
+    )
+
+    properties = adapter._nemotron_media_properties(
+        [Message.user(Image("a.jpg"), Video("v.mp4"))], metadata
+    )
+
+    assert properties == {
+        (0, 0): {"tokens_per_tile": 256},
+        (0, 1): {"frames_sampled": 3, "sample_fps": 2.0, "max_frames": 256},
+    }

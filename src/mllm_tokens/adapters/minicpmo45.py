@@ -5,13 +5,24 @@ from typing import Any
 
 import librosa
 import PIL.Image as PImage
+import torch
 
 from mllm_tokens.adapters.base import MediaSource, ModelAdapter
 from mllm_tokens.inputs import Message
 from mllm_tokens.report import TokenReport, TokenSegment
 
+VIDEO_SAMPLE_FPS = 1.0
+
 
 class MiniCPMo45Adapter(ModelAdapter):
+    ASSUMPTIONS = (
+        "Images are processed with max_slice_nums=1 (a single slice per "
+        "image); the model's default slicing of high-resolution images can "
+        "produce more tokens.",
+        f"Videos are sampled with ffmpeg at {VIDEO_SAMPLE_FPS:g} fps and each "
+        "frame is processed as one image.",
+    )
+
     def analyze(
         self,
         messages: list[Message],
@@ -43,11 +54,21 @@ class MiniCPMo45Adapter(ModelAdapter):
             ),
         )
 
+        input_ids = inputs["input_ids"]
+        bounded = [
+            *zip(visual_sources, inputs.image_bound[0], strict=False),
+            *zip(audio_sources, inputs.audio_bounds[0], strict=False),
+        ]
+
         return self._build_report(
-            input_ids=inputs["input_ids"],
+            input_ids=input_ids,
             attention_mask=inputs["attention_mask"],
             segments=segments,
             kv_cache_dtype=kv_cache_dtype,
+            messages=messages,
+            media_masks=self._bound_masks(input_ids, bounded),
+            media_properties=self._bound_properties(visual_sources),
+            add_generation_prompt=add_generation_prompt,
         )
 
     def _to_minicpm_messages(
@@ -125,6 +146,42 @@ class MiniCPMo45Adapter(ModelAdapter):
 
         return processor_kwargs, visual_sources, audio_sources
 
+    @staticmethod
+    def _bound_masks(
+        input_ids: Any, bounded: list[tuple[MediaSource, Any]]
+    ) -> dict[str, torch.Tensor]:
+        length = input_ids.shape[-1]
+        masks: dict[str, torch.Tensor] = {}
+
+        for source, (start, end) in bounded:
+            mask = masks.setdefault(
+                source.modality, torch.zeros(length, dtype=torch.bool)
+            )
+            mask[int(start) : int(end)] = True
+
+        return masks
+
+    @staticmethod
+    def _bound_properties(
+        visual_sources: list[MediaSource],
+    ) -> dict[tuple[int, int], dict[str, Any]]:
+        counts: dict[MediaSource, int] = {}
+        for source in visual_sources:
+            counts[source] = counts.get(source, 0) + 1
+
+        properties = {}
+        for source, count in counts.items():
+            key = (source.message_index, source.content_index)
+            if source.modality == "image":
+                properties[key] = {"slices": count, "max_slice_nums": 1}
+            else:
+                properties[key] = {
+                    "frames_sampled": count,
+                    "sample_fps": VIDEO_SAMPLE_FPS,
+                }
+
+        return properties
+
     def _kv_cache_config(self) -> Any:
         return self.config.get_text_config()
 
@@ -132,7 +189,7 @@ class MiniCPMo45Adapter(ModelAdapter):
     def load_video_frames(
         video_path: str | Path,
         *,
-        fps: float = 1.0,
+        fps: float = VIDEO_SAMPLE_FPS,
     ) -> list[PImage.Image]:
         video_path = Path(video_path)
 

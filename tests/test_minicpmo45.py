@@ -63,3 +63,28 @@ def test_minicpmo45_builds_all_modality_segments() -> None:
         + report.audio_tokens
         + report.template_tokens
     )
+
+
+def test_minicpmo45_bound_masks_and_properties() -> None:
+    input_ids = torch.zeros((1, 12), dtype=torch.int64)
+    image = MediaSource(0, 1, "user", "image")
+    frame = MediaSource(0, 2, "user", "video")
+    audio = MediaSource(0, 3, "user", "audio")
+
+    masks = MiniCPMo45Adapter._bound_masks(
+        input_ids,
+        [
+            (image, torch.tensor([1, 3])),
+            (frame, torch.tensor([4, 6])),
+            (frame, torch.tensor([7, 8])),
+            (audio, torch.tensor([9, 12])),
+        ],
+    )
+
+    assert masks["image"].nonzero().flatten().tolist() == [1, 2]
+    assert masks["video"].nonzero().flatten().tolist() == [4, 5, 7]
+    assert masks["audio"].nonzero().flatten().tolist() == [9, 10, 11]
+    assert MiniCPMo45Adapter._bound_properties([image, frame, frame]) == {
+        (0, 1): {"slices": 1, "max_slice_nums": 1},
+        (0, 2): {"frames_sampled": 2, "sample_fps": 1.0},
+    }

@@ -1,6 +1,6 @@
 from mllm_tokens.analyzer import Analyzer, analyze
 from mllm_tokens.inputs import Audio, Image, Message, Text, Video
-from mllm_tokens.report import TokenReport, TokenSegment
+from mllm_tokens.report import MediaDetail, TokenReport, TokenSegment, TokenSpan
 
 __all__ = [
     "Analyzer",
@@ -10,6 +10,8 @@ __all__ = [
     "Text",
     "Video",
     "Image",
+    "MediaDetail",
     "TokenReport",
     "TokenSegment",
+    "TokenSpan",
 ]
