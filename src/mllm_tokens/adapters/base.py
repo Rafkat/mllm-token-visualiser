@@ -328,11 +328,14 @@ class ModelAdapter(ABC):
         return result
 
     @staticmethod
-    def _check_audio_input(normalized_messages: list[dict]) -> None:
+    def _check_audio_input(
+        normalized_messages: list[dict], reason: str | None = None
+    ) -> None:
         for message in normalized_messages:
             for content in message["content"]:
                 if content["type"] == "audio":
-                    raise ValueError("Not supported input type: audio")
+                    detail = f" ({reason})" if reason else ""
+                    raise ValueError(f"Not supported input type: audio{detail}")
 
     def _build_text_segments(self, messages: list[Message]) -> tuple[TokenSegment, ...]:
         tokenizer = self.processor.tokenizer

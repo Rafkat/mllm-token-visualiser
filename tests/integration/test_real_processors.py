@@ -87,3 +87,30 @@ def test_qwen3omni_samples_video_at_two_fps() -> None:
     # 25.1 s at 2 fps -> 50 frames -> 25 groups of two (temporal patch size 2).
     assert detail.properties["frame_groups"] == 25
     assert report.total_tokens < 20_000
+
+
+def test_gemma4_audio_support_follows_config_not_model_id(tmp_path) -> None:
+    from huggingface_hub import snapshot_download
+    from transformers import AutoConfig
+
+    from mllm_tokens.adapters.gemma4 import Gemma4Adapter
+
+    # A local copy under a name without "e4b", as a fine-tune would have.
+    snapshot = snapshot_download(
+        "google/gemma-4-e4b-it", allow_patterns=["*.json", "*.jinja", "*.model"]
+    )
+    local = tmp_path / "my-gemma-finetune"
+    local.symlink_to(snapshot)
+
+    analyzer = Analyzer.from_pretrained(str(local))
+    report = analyzer.analyze([Message.user(Text("Transcribe."), AUDIO)])
+
+    assert report.metadata["adapter"] == "Gemma4Adapter"
+    assert report.audio_tokens > 0
+    assert report.warnings == ()
+
+    # 26B-A4B and 31B have no audio encoder: config.audio_config is null.
+    config = AutoConfig.from_pretrained("google/gemma-4-31B-it")
+    adapter = Gemma4Adapter("google/gemma-4-31B-it", None, config)
+    with pytest.raises(ValueError, match="config.audio_config is null"):
+        adapter.analyze([Message.user(AUDIO)])

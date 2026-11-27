@@ -26,7 +26,7 @@ The library distinguishes user text, modality positions, chat-template overhead,
 | Gemma 4 | ✅ | ✅ | Checkpoint-dependent | Checkpoint-dependent | Implemented |
 | NVIDIA Nemotron 3 Nano Omni FP8 | ✅ | ✅ | ✅ | ✅ | Implemented |
 
-Gemma 4 modality support depends on the selected checkpoint and its processor. The adapter can account for image, video, and audio placeholders when the checkpoint supports them.
+Gemma 4 modality support depends on the selected checkpoint and its processor. The adapter can account for image, video, and audio placeholders when the checkpoint supports them. Audio support is read from `config.audio_config`, so local paths and renamed fine-tunes work: it is set for E2B, E4B, and 12B, and null for 26B-A4B and 31B. Only a config without that attribute falls back to the model ID, with a warning. The 12B checkpoints use `model_type` `gemma4_unified`, which is not yet registered or tested, so they are matched by model ID only.
 
 The Nemotron adapter has been checked against the processor of
 `nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-FP8` (revision `0acd4b1c`).

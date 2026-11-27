@@ -1,10 +1,14 @@
 from typing import Any
 
 from mllm_tokens.adapters.base import MediaModality, ModelAdapter
-from mllm_tokens.inputs import Message
+from mllm_tokens.inputs import Audio, Message
 from mllm_tokens.report import TokenReport, TokenSegment
 
+# Fallback only, for configurations without an ``audio_config`` attribute.
+# Official checkpoints set ``audio_config`` for E2B, E4B, and 12B and leave it
+# null for 26B-A4B and 31B (checked against their config.json, 2026-11-27).
 GEMMA_AUDIO_VARIANTS = ("e2b", "e4b", "12b")
+_MISSING = object()
 
 
 GEMMA_PLACEHOLDERS = {
@@ -16,7 +20,9 @@ GEMMA_PLACEHOLDERS = {
 
 class Gemma4Adapter(ModelAdapter):
     ASSUMPTIONS = (
-        "Audio support is inferred from the model ID (e2b, e4b, 12b variants).",
+        "Audio support is read from config.audio_config: a checkpoint has an "
+        "audio encoder when it is set. Without that attribute it is inferred "
+        "from the model ID (e2b, e4b, 12b), with a warning.",
         "Gemma 4 sliding-window layers are counted as full-attention layers, "
         "so the KV-cache estimate is an upper bound for long contexts.",
     )
@@ -30,12 +36,20 @@ class Gemma4Adapter(ModelAdapter):
     ) -> TokenReport:
         normalized_messages = self._normalize_messages(messages)
 
-        supports_audio = any(
-            audio_gemma in self.model_id.lower() for audio_gemma in GEMMA_AUDIO_VARIANTS
-        )
+        supports_audio, audio_reason, inferred = self._audio_support()
 
         if not supports_audio:
-            self._check_audio_input(normalized_messages)
+            self._check_audio_input(normalized_messages, audio_reason)
+
+        has_audio = any(
+            isinstance(item, Audio) for message in messages for item in message.content
+        )
+        warnings: tuple[str, ...] = ()
+        if inferred and has_audio:
+            warnings = (
+                "Audio support was inferred from the model ID because the config "
+                "has no audio_config attribute.",
+            )
 
         inputs = self.processor.apply_chat_template(
             normalized_messages,
@@ -78,7 +92,24 @@ class Gemma4Adapter(ModelAdapter):
                 **self._position_properties(messages, inputs, "video"),
             },
             add_generation_prompt=add_generation_prompt,
+            warnings=warnings,
         )
+
+    def _audio_support(self) -> tuple[bool, str, bool]:
+        """Return (has an audio encoder, reason, inferred from the model ID)."""
+        audio_config = getattr(self.config, "audio_config", _MISSING)
+        if audio_config is not _MISSING:
+            if audio_config is None:
+                return False, "config.audio_config is null: no audio encoder", False
+            return True, "config.audio_config is set", False
+
+        normalized = self.model_id.lower()
+        supports_audio = any(variant in normalized for variant in GEMMA_AUDIO_VARIANTS)
+        reason = (
+            "the config has no audio_config and the model ID names no audio "
+            "variant (e2b, e4b, 12b)"
+        )
+        return supports_audio, reason, True
 
     def _build_position_segments(
         self,
