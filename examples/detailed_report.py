@@ -22,6 +22,7 @@ def main() -> None:
     report.show(show_template=True)
 
     Path("report.json").write_text(report.to_json())
+    report.save_html("report.html")
 
 
 if __name__ == "__main__":

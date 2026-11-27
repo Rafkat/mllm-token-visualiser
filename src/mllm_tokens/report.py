@@ -2,6 +2,7 @@ import csv
 import io
 import json
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any
 
 REPORT_SCHEMA_VERSION = "1"
@@ -193,6 +194,22 @@ class TokenReport:
         from mllm_tokens.display import print_report
 
         print_report(self, **options)
+
+    def to_html(self, **options: Any) -> str:
+        """Return a self-contained HTML report; see ``mllm_tokens.html_report``.
+
+        Options: ``title``, ``embed_media`` (default ``False``; embeds image
+        thumbnails), and ``max_table_spans``.
+        """
+        from mllm_tokens.html_report import render_html
+
+        return render_html(self, **options)
+
+    def save_html(self, path: str | Path, **options: Any) -> Path:
+        """Write the HTML report to ``path``. Options as for ``to_html``."""
+        from mllm_tokens.html_report import save_html
+
+        return save_html(self, path, **options)
 
     def print_dict(self) -> None:
         key_values = [

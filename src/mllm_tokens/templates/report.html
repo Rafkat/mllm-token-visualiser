@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+.viz-root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface-1: #fcfcfb;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --hover-wash: rgba(11, 11, 11, 0.04);
+  --status-warning: #fab219;
+  --kind-text: #2a78d6;
+  --kind-image: #eb6834;
+  --kind-video: #1baf7a;
+  --kind-audio: #eda100;
+  --kind-template: #898781;
+  --ink-text: #ffffff;
+  --ink-image: #ffffff;
+  --ink-video: #ffffff;
+  --ink-audio: #0b0b0b;
+  --ink-template: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .viz-root {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #f0efec;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --hover-wash: rgba(255, 255, 255, 0.05);
+    --kind-text: #3987e5;
+    --kind-image: #d95926;
+    --kind-video: #199e70;
+    --kind-audio: #c98500;
+    --kind-template: #898781;
+    --ink-audio: #ffffff;
+  }
+}
+:root[data-theme="dark"] .viz-root {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface-1: #1a1a19;
+  --text-primary: #f0efec;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255, 255, 255, 0.10);
+  --hover-wash: rgba(255, 255, 255, 0.05);
+  --kind-text: #3987e5;
+  --kind-image: #d95926;
+  --kind-video: #199e70;
+  --kind-audio: #c98500;
+  --kind-template: #898781;
+  --ink-audio: #ffffff;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+.viz-root {
+  min-height: 100vh;
+  background: var(--page);
+  color: var(--text-primary);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  padding: 24px;
+}
+main { max-width: 1120px; margin: 0 auto; display: grid; gap: 16px; }
+header { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+header .titles { flex: 1 1 420px; min-width: 0; }
+h1 { font-size: 20px; font-weight: 600; margin: 0; overflow-wrap: anywhere; }
+h2 { font-size: 15px; font-weight: 600; margin: 0; }
+.subtitle { color: var(--text-secondary); margin: 2px 0 0; }
+.actions { display: flex; gap: 8px; }
+button {
+  font: inherit; color: var(--text-primary); background: var(--surface-1);
+  border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px;
+  cursor: pointer;
+}
+button:hover { background: var(--hover-wash); }
+button:focus-visible, svg:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--kind-text); outline-offset: 2px;
+}
+.card {
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px 20px; min-width: 0;
+}
+.card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 12px; }
+.card-head p { color: var(--text-secondary); margin: 0; flex: 1 1 260px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+.tile .label { color: var(--text-secondary); }
+.tile .value { font-size: 22px; font-weight: 600; }
+.tile .note { color: var(--text-muted); font-size: 12px; }
+.tile.hero .value { font-size: 48px; line-height: 1.1; }
+.segbar { display: flex; gap: 2px; height: 28px; }
+.segbar .part {
+  border-radius: 4px; min-width: 2px; display: flex; align-items: center;
+  padding: 0 8px; font-size: 12px; font-weight: 600; white-space: nowrap;
+  overflow: visible;
+}
+.segbar .part:hover, .segbar .part:focus-visible { filter: brightness(1.12); outline: none; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 10px; color: var(--text-secondary); }
+.legend .key { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; flex: none; }
+.lane-chart { position: relative; }
+.lane-chart svg { display: block; width: 100%; }
+.lane-chart svg text { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; }
+.tooltip {
+  position: absolute; pointer-events: none; z-index: 2; max-width: 340px;
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 10px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); font-size: 12px;
+}
+.tooltip .value { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.tooltip .row { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+.tooltip .line-key { width: 12px; height: 2px; border-radius: 1px; flex: none; }
+.tooltip pre { margin: 6px 0 0; }
+.scale-note { color: var(--text-muted); font-size: 12px; margin: 6px 0 0; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 6px 10px 6px 0; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { color: var(--text-secondary); font-weight: 500; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.table-wrap { overflow-x: auto; }
+pre, code { font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+pre.decoded { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-secondary); }
+.ws { color: var(--text-muted); }
+details > summary { cursor: pointer; color: var(--text-secondary); margin-top: 8px; }
+.kind-cell { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.thumb { max-width: 120px; max-height: 90px; border-radius: 4px; display: block; margin-top: 4px; }
+.props { color: var(--text-muted); font-size: 12px; }
+.notes h3 { font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
+.notes ul { margin: 0; padding-left: 18px; color: var(--text-secondary); }
+.warning { display: flex; gap: 8px; align-items: flex-start; margin: 4px 0; }
+.warning .icon { color: var(--status-warning); font-weight: 700; flex: none; }
+.warning .label { font-weight: 600; flex: none; }
+dl.meta { display: grid; grid-template-columns: max-content 1fr; gap: 2px 16px; margin: 0; }
+dl.meta dt { color: var(--text-secondary); }
+dl.meta dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.muted { color: var(--text-muted); }
+[hidden] { display: none !important; }
+@media print { .actions { display: none; } .viz-root { background: #fff; } }
+</style>
+</head>
+<body>
+<div class="viz-root">
+<main id="app">
+  <header>
+    <div class="titles">
+      <h1 id="title"></h1>
+      <p class="subtitle" id="subtitle"></p>
+    </div>
+    <div class="actions">
+      <button type="button" id="theme-toggle">Theme: auto</button>
+      <button type="button" id="download-json">Download JSON</button>
+    </div>
+  </header>
+
+  <section class="card tiles" id="tiles" aria-label="Summary"></section>
+
+  <section class="card" aria-labelledby="composition-title">
+    <div class="card-head">
+      <h2 id="composition-title">Composition</h2>
+      <p>Share of the processed sequence by token kind.</p>
+      <button type="button" data-toggle="composition-table">Show table</button>
+    </div>
+    <div id="composition-chart"></div>
+    <div class="table-wrap" id="composition-table" hidden></div>
+  </section>
+
+  <section class="card" aria-labelledby="map-title">
+    <div class="card-head">
+      <h2 id="map-title">Token map</h2>
+      <p>Every position of the sequence, one lane per kind. Hover or focus the map and use the arrow keys to step through spans.</p>
+      <button type="button" data-toggle="span-table">Show table</button>
+    </div>
+    <div class="lane-chart" id="lane-chart"></div>
+    <p class="scale-note" id="map-note"></p>
+    <div class="table-wrap" id="span-table" hidden></div>
+  </section>
+
+  <section class="card" aria-labelledby="items-title">
+    <div class="card-head">
+      <h2 id="items-title">Input items</h2>
+      <p id="items-note"></p>
+    </div>
+    <div class="table-wrap" id="items-table"></div>
+  </section>
+
+  <section class="card" aria-labelledby="template-title">
+    <div class="card-head">
+      <h2 id="template-title">Template spans</h2>
+      <p>Chat-template and special tokens, decoded. Whitespace is shown as ␣, ⏎, and ⇥.</p>
+    </div>
+    <div id="template-spans"></div>
+  </section>
+
+  <section class="card notes" aria-labelledby="notes-title">
+    <div class="card-head"><h2 id="notes-title">Warnings, assumptions, and run details</h2></div>
+    <div id="notes"></div>
+  </section>
+</main>
+</div>
+<script type="application/json" id="report-payload">__PAYLOAD__</script>
+<script type="application/json" id="report-json">__REPORT_JSON__</script>
+<script>
+(() => {
+  "use strict";
+  const data = JSON.parse(document.getElementById("report-payload").textContent);
+  const KINDS = ["text", "image", "video", "audio", "template"];
+  const nf = new Intl.NumberFormat("en-US");
+  const pctFormat = new Intl.NumberFormat("en-US", { style: "percent", maximumFractionDigits: 1 });
+  const pf = { format: (v) => (v > 0 && v < 0.0005 ? "<0.1%" : pctFormat.format(v)) };
+  const fmt = (n) => nf.format(n);
+  const color = (kind) => `var(--kind-${KINDS.includes(kind) ? kind : "template"})`;
+  const SVG = "http://www.w3.org/2000/svg";
+
+  function el(tag, attrs = {}, ...children) {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(attrs)) {
+      if (value === undefined || value === null || value === false) continue;
+      if (key === "class") node.className = value;
+      else if (key === "style") node.style.cssText = value;
+      else node.setAttribute(key, value === true ? "" : value);
+    }
+    for (const child of children) {
+      if (child === null || child === undefined) continue;
+      node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+    }
+    return node;
+  }
+  function svg(tag, attrs = {}) {
+    const node = document.createElementNS(SVG, tag);
+    for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+    return node;
+  }
+  const swatch = (kind) => el("span", { class: "swatch", style: `background:${color(kind)}` });
+  const kindCell = (kind) => el("span", { class: "kind-cell" }, swatch(kind), kind);
+  function showWhitespace(text) {
+    const frag = document.createDocumentFragment();
+    for (const part of String(text).split(/( |\n|\t)/)) {
+      if (part === " ") frag.append(el("span", { class: "ws" }, "␣"));
+      else if (part === "\n") frag.append(el("span", { class: "ws" }, "⏎"), "\n");
+      else if (part === "\t") frag.append(el("span", { class: "ws" }, "⇥"));
+      else if (part) frag.append(part);
+    }
+    return frag;
+  }
+  function table(columns, rows) {
+    const head = el("tr", {}, ...columns.map((c) => el("th", { class: c.num ? "num" : null, scope: "col" }, c.label)));
+    const body = rows.map((row) => el("tr", {}, ...columns.map((c) => {
+      const value = c.value(row);
+      return el("td", { class: c.num ? "num" : null }, value);
+    })));
+    return el("table", {}, el("thead", {}, head), el("tbody", {}, ...body));
+  }
+
+  // Header and summary tiles.
+  const meta = data.metadata;
+  document.getElementById("title").textContent = data.model_id;
+  const subtitle = [meta.adapter, meta.processor_class, meta.library_version && `mllm-token-visualiser ${meta.library_version}`, meta.transformers_version && `transformers ${meta.transformers_version}`].filter(Boolean);
+  document.getElementById("subtitle").textContent = subtitle.join(" · ");
+
+  const s = data.summary;
+  const tiles = document.getElementById("tiles");
+  const tile = (label, value, note, hero) => el("div", { class: hero ? "tile hero" : "tile" },
+    el("div", { class: "label" }, label), el("div", { class: "value" }, value), note ? el("div", { class: "note" }, note) : null);
+  tiles.append(tile("Total tokens", fmt(s.total_tokens), "active positions in the processed sequence", true));
+  tiles.append(tile("KV cache (estimate)", s.kv_cache ?? "—", s.kv_cache ? `${s.kv_cache_per_token} per token, ${s.kv_cache_dtype}` : "unavailable for this model"));
+  tiles.append(tile("Media items", fmt(s.media_items), null));
+  tiles.append(tile("input_ids", s.token_id_bytes, "size of the token ID tensor"));
+
+  // Composition: one whole split into parts (tall segmented bar).
+  const parts = data.composition.filter((p) => p.tokens > 0);
+  const chart = document.getElementById("composition-chart");
+  const bar = el("div", { class: "segbar", role: "img", "aria-label": "Composition: " + parts.map((p) => `${p.kind} ${fmt(p.tokens)} tokens (${pf.format(p.share)})`).join(", ") });
+  const tooltipHost = el("div", { class: "lane-chart" });
+  const partTip = el("div", { class: "tooltip", hidden: true });
+  for (const p of parts) {
+    const part = el("div", { class: "part", tabindex: "0", style: `flex:${p.tokens} 1 0;background:${color(p.kind)};color:var(--ink-${p.kind})`, "aria-label": `${p.kind}: ${fmt(p.tokens)} tokens, ${pf.format(p.share)}` });
+    part.dataset.long = `${p.kind} ${pf.format(p.share)}`;
+    part.dataset.short = pf.format(p.share);
+    const show = () => {
+      partTip.replaceChildren(el("div", { class: "value" }, `${fmt(p.tokens)} tokens`),
+        el("div", { class: "row" }, el("span", { class: "line-key", style: `background:${color(p.kind)}` }), `${p.kind} · ${pf.format(p.share)}`),
+        p.kv_cache ? el("div", { class: "row" }, `KV cache ≈ ${p.kv_cache}`) : null);
+      partTip.hidden = false;
+      const hostBox = tooltipHost.getBoundingClientRect();
+      const box = part.getBoundingClientRect();
+      partTip.style.left = `${Math.max(0, Math.min(box.left - hostBox.left, hostBox.width - 220))}px`;
+      partTip.style.top = `${box.bottom - hostBox.top + 6}px`;
+    };
+    part.addEventListener("pointerenter", show);
+    part.addEventListener("focus", show);
+    part.addEventListener("pointerleave", () => { partTip.hidden = true; });
+    part.addEventListener("blur", () => { partTip.hidden = true; });
+    bar.append(part);
+  }
+  tooltipHost.append(bar, partTip);
+  chart.append(tooltipHost);
+  const legend = el("div", { class: "legend" }, ...parts.map((p) => el("span", { class: "key" }, swatch(p.kind), `${p.kind} · ${fmt(p.tokens)}`)));
+  chart.append(legend);
+  // Print "kind share" inside a part when it fits with padding, else the
+  // share alone, else nothing (the legend, tooltip, and table carry it).
+  // Naming the kind matters where image and audio touch (no video): that
+  // pair is too close in hue to rely on colour alone.
+  function labelParts() {
+    for (const part of bar.children) {
+      part.textContent = "";
+      for (const text of [part.dataset.long, part.dataset.short]) {
+        const probe = el("span", {}, text);
+        part.append(probe);
+        if (probe.getBoundingClientRect().width + 16 <= part.getBoundingClientRect().width) break;
+        probe.remove();
+      }
+    }
+  }
+  document.getElementById("composition-table").append(table([
+    { label: "Kind", value: (p) => kindCell(p.kind) },
+    { label: "Tokens", num: true, value: (p) => fmt(p.tokens) },
+    { label: "Share", num: true, value: (p) => pf.format(p.share) },
+    { label: "KV cache (estimate)", num: true, value: (p) => p.kv_cache ?? "—" },
+  ], data.composition));
+
+  // Token map: x = sequence position, one lane per kind present.
+  const spans = data.spans.map(([start, end, kind, owner, text, exact]) => ({ start, end, kind, owner, text, exact }));
+  const total = spans.length ? spans[spans.length - 1].end : 0;
+  const lanes = KINDS.filter((k) => spans.some((sp) => sp.kind === k));
+  const laneChart = document.getElementById("lane-chart");
+  const tip = el("div", { class: "tooltip", hidden: true });
+  let focusIndex = -1;
+  let geometry = null;
+
+  function niceStep(range, target) {
+    const raw = range / Math.max(1, target);
+    const mag = 10 ** Math.floor(Math.log10(raw));
+    for (const m of [1, 2, 2.5, 5, 10]) if (raw <= m * mag) return m * mag;
+    return 10 * mag;
+  }
+  const compact = (n) => n >= 10000 ? `${nf.format(n / 1000)}K` : fmt(n);
+
+  function drawMap() {
+    tip.hidden = true;
+    laneChart.replaceChildren();
+    if (!spans.length) {
+      laneChart.append(el("p", { class: "muted" }, "Token map unavailable: the report has no spans (see warnings)."));
+      return;
+    }
+    const width = Math.max(320, laneChart.clientWidth);
+    const labelW = 76, right = 12, laneH = 22, barH = 12, top = 4, axisH = 24;
+    const plotW = width - labelW - right;
+    const height = top + lanes.length * laneH + axisH;
+    const x = (pos) => labelW + (pos / total) * plotW;
+    geometry = { x, labelW, plotW, top, laneH, height };
+
+    const root = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, tabindex: "0", role: "img",
+      "aria-label": `Token map of ${fmt(total)} positions. Use the arrow keys to step through spans.` });
+    lanes.forEach((kind, i) => {
+      const y = top + i * laneH;
+      const label = svg("text", { x: 0, y: y + laneH / 2 + 4, fill: "var(--text-secondary)" });
+      label.textContent = kind;
+      root.append(label);
+      root.append(svg("line", { x1: labelW, x2: labelW + plotW, y1: y + laneH / 2, y2: y + laneH / 2, stroke: "var(--grid)", "stroke-width": 1 }));
+    });
+    for (const sp of spans) {
+      const lane = lanes.indexOf(sp.kind);
+      const x0 = x(sp.start), w = Math.max(1, x(sp.end) - x0);
+      root.append(svg("rect", { x: x0, y: top + lane * laneH + (laneH - barH) / 2, width: w, height: barH,
+        rx: Math.min(2, w / 2), fill: color(sp.kind) }));
+    }
+    const axisY = top + lanes.length * laneH + 2;
+    root.append(svg("line", { x1: labelW, x2: labelW + plotW, y1: axisY, y2: axisY, stroke: "var(--axis)", "stroke-width": 1 }));
+    const step = niceStep(total, Math.max(2, Math.floor(plotW / 90)));
+    for (let t = 0; t <= total; t += step) {
+      const tx = x(t);
+      root.append(svg("line", { x1: tx, x2: tx, y1: axisY, y2: axisY + 4, stroke: "var(--axis)" }));
+      const label = svg("text", { x: tx, y: axisY + 17, fill: "var(--text-muted)", "text-anchor": t === 0 ? "start" : "middle", style: "font-variant-numeric: tabular-nums" });
+      label.textContent = compact(t);
+      root.append(label);
+    }
+    const cross = svg("line", { y1: top, y2: axisY, stroke: "var(--text-secondary)", "stroke-width": 1, visibility: "hidden" });
+    root.append(cross);
+    geometry.cross = cross;
+
+    root.addEventListener("pointermove", (event) => {
+      const box = root.getBoundingClientRect();
+      const px = event.clientX - box.left;
+      if (px < labelW || px > labelW + plotW) { hideTip(); return; }
+      const pos = Math.min(total - 1, Math.max(0, Math.floor(((px - labelW) / plotW) * total)));
+      showSpan(spanAt(pos), pos);
+    });
+    root.addEventListener("pointerleave", hideTip);
+    root.addEventListener("keydown", (event) => {
+      if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      if (event.key === "Home") focusIndex = 0;
+      else if (event.key === "End") focusIndex = spans.length - 1;
+      else focusIndex = Math.min(spans.length - 1, Math.max(0, focusIndex + (event.key === "ArrowRight" ? 1 : -1)));
+      showSpan(focusIndex, null);
+    });
+    root.addEventListener("focus", () => { if (focusIndex < 0) focusIndex = 0; showSpan(focusIndex, null); });
+    root.addEventListener("blur", hideTip);
+    laneChart.append(root, tip);
+  }
+  function spanAt(pos) {
+    let lo = 0, hi = spans.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (spans[mid].start <= pos) lo = mid; else hi = mid - 1;
+    }
+    return lo;
+  }
+  function hideTip() { tip.hidden = true; if (geometry) geometry.cross.setAttribute("visibility", "hidden"); }
+  function showSpan(index, pos) {
+    const sp = spans[index];
+    focusIndex = index;
+    const where = pos === null ? (sp.start + sp.end) / 2 : pos + 0.5;
+    const cx = geometry.x(where);
+    geometry.cross.setAttribute("x1", cx); geometry.cross.setAttribute("x2", cx);
+    geometry.cross.setAttribute("visibility", "visible");
+    const range = sp.end - sp.start === 1 ? `position ${fmt(sp.start)}` : `positions ${fmt(sp.start)}–${fmt(sp.end - 1)}`;
+    const children = [
+      el("div", { class: "value" }, `${fmt(sp.end - sp.start)} ${sp.end - sp.start === 1 ? "token" : "tokens"}`),
+      el("div", { class: "row" }, el("span", { class: "line-key", style: `background:${color(sp.kind)}` }), sp.kind + (sp.exact ? "" : " (located approximately)")),
+      el("div", { class: "row" }, range),
+      el("div", { class: "row" }, sp.owner ? (sp.kind === "template" ? `overhead of ${sp.owner}` : sp.owner) : "conversation template"),
+    ];
+    if (sp.text) {
+      const shown = sp.text.length > 160 ? sp.text.slice(0, 159) + "…" : sp.text;
+      children.push(el("pre", { class: "decoded" }, showWhitespace(shown)));
+    }
+    tip.replaceChildren(...children);
+    tip.hidden = false;
+    const tipW = Math.min(340, laneChart.clientWidth);
+    tip.style.left = `${Math.max(0, Math.min(cx + 10, laneChart.clientWidth - tipW))}px`;
+    tip.style.top = `${geometry.top + lanes.length * geometry.laneH + 28}px`;
+  }
+
+  document.getElementById("map-note").textContent = spans.length
+    ? `${fmt(spans.length)} spans over ${fmt(total)} positions. Spans narrower than a pixel are drawn 1 px wide.`
+    : "";
+
+  const limit = data.max_table_spans;
+  const spanColumns = [
+    { label: "Positions", num: true, value: (sp) => `${fmt(sp.start)}–${fmt(sp.end)}` },
+    { label: "Tokens", num: true, value: (sp) => fmt(sp.end - sp.start) },
+    { label: "Kind", value: (sp) => kindCell(sp.kind) },
+    { label: "Belongs to", value: (sp) => sp.owner ?? "conversation" },
+    { label: "Decoded text", value: (sp) => sp.text ? el("pre", { class: "decoded" }, showWhitespace(sp.text.length > 300 ? sp.text.slice(0, 299) + "…" : sp.text)) : "" },
+  ];
+  const spanTable = document.getElementById("span-table");
+  spanTable.append(table(spanColumns, spans.slice(0, limit)));
+  if (spans.length > limit) spanTable.append(el("p", { class: "muted" }, `Showing ${fmt(limit)} of ${fmt(spans.length)} spans; the downloaded JSON has all of them.`));
+
+  // Input items.
+  const items = data.items;
+  document.getElementById("items-note").textContent = data.embed_media
+    ? "Image thumbnails are embedded in this file."
+    : "Media files are not embedded; only their metadata is shown.";
+  document.getElementById("items-table").append(items.length ? table([
+    { label: "Msg", num: true, value: (it) => fmt(it.message) },
+    { label: "Role", value: (it) => it.role },
+    { label: "Kind", value: (it) => kindCell(it.kind) },
+    { label: "Tokens", num: true, value: (it) => fmt(it.tokens) },
+    { label: "Share", num: true, value: (it) => pf.format(it.share) },
+    { label: "Details", value: (it) => {
+      const cell = el("div");
+      if (it.source) cell.append(el("div", {}, el("code", {}, it.source)));
+      cell.append(el("div", {}, it.kind === "text" ? `“${it.details.length > 120 ? it.details.slice(0, 119) + "…" : it.details}”` : it.details));
+      if (it.thumbnail) cell.append(el("img", { class: "thumb", src: it.thumbnail, alt: `Thumbnail of ${it.source}` }));
+      if (it.properties && Object.keys(it.properties).length) {
+        const props = Object.entries(it.properties).map(([k, v]) => `${k}=${Array.isArray(v) ? JSON.stringify(v) : v}`).join(", ");
+        cell.append(el("details", {}, el("summary", {}, "All properties"), el("div", { class: "props" }, props)));
+      }
+      return cell;
+    } },
+  ], items) : el("p", { class: "muted" }, "No segments in this report."));
+
+  // Template spans.
+  const templateSpans = spans.filter((sp) => sp.kind === "template");
+  const templateHost = document.getElementById("template-spans");
+  if (!templateSpans.length) templateHost.append(el("p", { class: "muted" }, "No template spans."));
+  else {
+    const templateTotal = templateSpans.reduce((sum, sp) => sum + sp.end - sp.start, 0);
+    templateHost.append(el("p", { class: "muted" }, `${fmt(templateSpans.length)} spans, ${fmt(templateTotal)} tokens.`));
+    const wrap = el("div", { class: "table-wrap" }, table(spanColumns.filter((c) => c.label !== "Kind"), templateSpans.slice(0, limit)));
+    templateHost.append(el("details", {}, el("summary", {}, "Show decoded template spans"), wrap));
+  }
+
+  // Notes.
+  const notes = document.getElementById("notes");
+  if (data.warnings.length) {
+    notes.append(el("h3", {}, "Warnings"));
+    for (const w of data.warnings) notes.append(el("div", { class: "warning" }, el("span", { class: "icon", "aria-hidden": "true" }, "⚠"), el("span", { class: "label" }, "Warning"), el("span", {}, w)));
+  }
+  if (data.assumptions.length) {
+    notes.append(el("h3", {}, "Assumptions"));
+    notes.append(el("ul", {}, ...data.assumptions.map((a) => el("li", {}, a))));
+  }
+  const metaEntries = Object.entries(meta).filter(([, v]) => v !== null && v !== undefined);
+  if (metaEntries.length) {
+    notes.append(el("h3", {}, "Run details"));
+    notes.append(el("dl", { class: "meta" }, ...metaEntries.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, String(v))])));
+  }
+
+  // Theme toggle: auto -> light -> dark.
+  const themes = ["auto", "light", "dark"];
+  const toggle = document.getElementById("theme-toggle");
+  let theme = 0;
+  toggle.addEventListener("click", () => {
+    theme = (theme + 1) % themes.length;
+    if (themes[theme] === "auto") delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = themes[theme];
+    toggle.textContent = `Theme: ${themes[theme]}`;
+  });
+  const initial = new URLSearchParams(location.search).get("theme");
+  if (initial === "light" || initial === "dark") {
+    theme = themes.indexOf(initial);
+    document.documentElement.dataset.theme = initial;
+    toggle.textContent = `Theme: ${initial}`;
+  }
+
+  document.getElementById("download-json").addEventListener("click", () => {
+    const blob = new Blob([document.getElementById("report-json").textContent], { type: "application/json" });
+    const link = el("a", { href: URL.createObjectURL(blob), download: "token-report.json" });
+    document.body.append(link); link.click(); link.remove();
+  });
+
+  for (const button of document.querySelectorAll("[data-toggle]")) {
+    const target = document.getElementById(button.dataset.toggle);
+    button.setAttribute("aria-controls", target.id);
+    button.setAttribute("aria-expanded", "false");
+    button.addEventListener("click", () => {
+      target.hidden = !target.hidden;
+      button.textContent = target.hidden ? "Show table" : "Hide table";
+      button.setAttribute("aria-expanded", String(!target.hidden));
+    });
+  }
+
+  drawMap();
+  labelParts();
+  let resizeFrame = 0;
+  let drawnWidth = laneChart.clientWidth;
+  new ResizeObserver(() => {
+    if (laneChart.clientWidth === drawnWidth) return;
+    drawnWidth = laneChart.clientWidth;
+    cancelAnimationFrame(resizeFrame);
+    resizeFrame = requestAnimationFrame(() => { drawMap(); labelParts(); });
+  }).observe(document.getElementById("app"));
+})();
+</script>
+</body>
+</html>

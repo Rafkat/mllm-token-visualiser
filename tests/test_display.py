@@ -204,3 +204,11 @@ def test_every_kind_has_distinct_glyph() -> None:
     glyphs = [style.glyph for style in KIND_STYLES.values()]
 
     assert len(set(glyphs)) == len(glyphs)
+
+
+def test_describe_media_mentions_tokens_after_evs() -> None:
+    detail = MediaDetail(
+        0, 0, "user", "video", "v.mp4", 13056, properties={"tokens_after_evs": 3916}
+    )
+
+    assert describe_media(detail) == "3,916 after EVS"

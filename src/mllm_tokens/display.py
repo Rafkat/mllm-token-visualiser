@@ -336,6 +336,9 @@ def describe_media(detail: MediaDetail) -> str:
     if "tokens_per_frame" in props:
         parts.append(f"{props['tokens_per_frame']:g} tok/frame")
 
+    if "tokens_after_evs" in props:
+        parts.append(f"{props['tokens_after_evs']:,} after EVS")
+
     if detail.overhead_tokens:
         parts.append(f"+{detail.overhead_tokens:,} overhead")
 

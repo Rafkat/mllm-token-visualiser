@@ -131,6 +131,18 @@ Input items
 
 Each kind has its own colour and glyph (`█ text`, `▓ image`, `▒ video`, `░ audio`, `· template`), so the view also works without colour, for example with `NO_COLOR=1` or in logs. In the token map one cell stands for several positions and shows their majority kind; use `report.spans` or the template view for exact positions. `mllm_tokens.display.render_report()` returns the `rich` renderable for embedding in other output.
 
+### HTML report
+
+```python
+report.save_html("report.html")  # one self-contained file, no external assets
+report.save_html("report.html", embed_media=True)  # also embed image thumbnails
+html = report.to_html(title="Qwen3-VL, 25 s clip")
+```
+
+The page shows the total, the KV-cache estimate, a composition bar, a token map with one lane per kind (hover, or focus it and use the arrow keys, to see each span's positions, owner, and decoded text), the input items with their media properties, the decoded template spans, and the warnings, assumptions, and run details. Every chart has a table view, the page follows the system light or dark theme (with a toggle; `?theme=dark` also works), and "Download JSON" saves `report.to_json()`.
+
+By default the file contains no media: only counts, file names, header metadata, and decoded text and template spans. `embed_media=True` adds 240 px JPEG thumbnails of image inputs; keep it off for reports you share.
+
 ### Breakdowns and export
 
 ```python
@@ -428,11 +440,14 @@ src/mllm_tokens/
 ├── __init__.py
 ├── analyzer.py
 ├── display.py
+├── html_report.py
 ├── inputs.py
 ├── media.py
 ├── registry.py
 ├── report.py
 ├── spans.py
+├── templates/
+│   └── report.html
 └── adapters/
     ├── base.py
     ├── dtype_bytes.py
