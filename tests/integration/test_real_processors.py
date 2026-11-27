@@ -29,7 +29,7 @@ VIDEO = Video(ASSETS / "video_sample.mp4")
 
 CASES = [
     ("Qwen/Qwen3-VL-8B-Instruct", False, [IMAGE, VIDEO]),
-    ("Qwen/Qwen3-Omni-30B-A3B-Instruct", False, [IMAGE, AUDIO]),
+    ("Qwen/Qwen3-Omni-30B-A3B-Instruct", False, [IMAGE, AUDIO, VIDEO]),
     ("google/gemma-4-e4b-it", False, [IMAGE, AUDIO, VIDEO]),
     ("openbmb/MiniCPM-o-4_5", True, [IMAGE, AUDIO]),
     ("nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-FP8", True, [IMAGE, AUDIO]),
@@ -56,3 +56,34 @@ def test_real_processor_report_is_consistent(model_id, remote_code, media) -> No
     for detail in report.media:
         assert detail.tokens > 0
         assert "probe_error" not in detail.properties
+
+
+def test_nemotron_video_layout_matches_model() -> None:
+    if os.environ.get("MLLM_TOKENS_TRUST_REMOTE_CODE") != "1":
+        pytest.skip("set MLLM_TOKENS_TRUST_REMOTE_CODE=1 for remote-code processors")
+
+    analyzer = Analyzer.from_pretrained(
+        "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-FP8", trust_remote_code=True
+    )
+    report = analyzer.analyze([Message.user(VIDEO, Text("Describe the video."))])
+
+    (detail,) = report.media
+    frames = detail.properties["frames_sampled"]
+    assert report.video_tokens == frames * 256
+    assert detail.properties["tokens_after_evs"] < report.video_tokens
+    assert sum(span.tokens for span in report.spans) == report.total_tokens
+
+    # Timestamps follow the 2 fps sampling rate, not the source frame rate.
+    template = "".join(span.text or "" for span in report.spans)
+    assert "Frame 2 sampled at 0.50 seconds" in template
+    assert f"Frame {frames} sampled at {(frames - 1) / 2:.2f} seconds" in template
+
+
+def test_qwen3omni_samples_video_at_two_fps() -> None:
+    analyzer = Analyzer.from_pretrained("Qwen/Qwen3-Omni-30B-A3B-Instruct")
+    report = analyzer.analyze([Message.user(VIDEO, Text("Describe the video."))])
+
+    (detail,) = report.media
+    # 25.1 s at 2 fps -> 50 frames -> 25 groups of two (temporal patch size 2).
+    assert detail.properties["frame_groups"] == 25
+    assert report.total_tokens < 20_000

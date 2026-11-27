@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -8,7 +9,7 @@ import torch
 
 from mllm_tokens.adapters.base import ModelAdapter
 from mllm_tokens.inputs import Message
-from mllm_tokens.report import TokenReport, TokenSegment
+from mllm_tokens.report import TokenReport
 
 VIDEO_SAMPLE_FPS = 2.0
 VIDEO_MAX_FRAMES = 256
@@ -18,6 +19,11 @@ class NemotronAdapter(ModelAdapter):
     ASSUMPTIONS = (
         f"Videos are sampled with PyAV at {VIDEO_SAMPLE_FPS:g} fps, up to "
         f"{VIDEO_MAX_FRAMES} frames; only one video per request is supported.",
+        "video_tokens counts video positions before Efficient Video Sampling "
+        "(EVS). The model drops a fixed share of them after the vision encoder "
+        "(config.video_pruning_rate); media[].properties['tokens_after_evs'] is "
+        "the number the language model keeps. total_tokens and the KV-cache "
+        "estimate are pre-EVS.",
         "KV cache counts only attention layers in hybrid_override_pattern; "
         "recurrent Mamba-2 state is not included.",
     )
@@ -72,6 +78,22 @@ class NemotronAdapter(ModelAdapter):
         input_ids = inputs["input_ids"]
         attention_mask = inputs["attention_mask"].bool()
 
+        video_token_id = None
+        warnings: tuple[str, ...] = ()
+        if video is not None:
+            input_ids, attention_mask, video_token_id, warnings = (
+                self._normalize_video_placeholders(input_ids, attention_mask)
+            )
+
+        media_masks = self._nemotron_media_masks(
+            input_ids, has_video=video is not None, video_token_id=video_token_id
+        )
+        video_tokens = (
+            [int(media_masks["video"][attention_mask[0]].sum())]
+            if "video" in media_masks
+            else []
+        )
+
         segments = self._sort_segments(
             self._build_text_segments(messages),
             self._build_placeholder_segments(
@@ -81,10 +103,10 @@ class NemotronAdapter(ModelAdapter):
                 modality="image",
                 token=getattr(self.processor, "image_token", "<image>"),
             ),
-            self._build_video_segments(
-                messages,
-                video=video,
-                video_metadata=video_metadata,
+            self._build_segments_from_counts(
+                self._build_media_sources(messages, "video"),
+                video_tokens,
+                source_name="video token counts",
             ),
             self._build_placeholder_segments(
                 messages,
@@ -101,14 +123,126 @@ class NemotronAdapter(ModelAdapter):
             segments=segments,
             kv_cache_dtype=kv_cache_dtype,
             messages=messages,
-            media_masks=self._nemotron_media_masks(input_ids, video is not None),
-            media_properties=self._nemotron_media_properties(messages, video_metadata),
+            media_masks=media_masks,
+            media_properties=self._nemotron_media_properties(
+                messages, video_metadata, video_tokens
+            ),
             add_generation_prompt=add_generation_prompt,
-            warnings=self._video_placeholder_warnings(video is not None),
+            warnings=warnings,
         )
 
+    def _normalize_video_placeholders(
+        self, input_ids: torch.Tensor, attention_mask: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, int | None, tuple[str, ...]]:
+        """Return input IDs with one position per video embedding.
+
+        The model scatters video embeddings into positions equal to
+        ``config.video_context_token_id``. When the tokenizer has an atomic
+        ``<video>`` token, the processor output already has that layout. Some
+        checkpoints' tokenizers lack the token, so ``<video>`` is encoded as
+        text fragments (``<``, ``video``, ``>`` merged in varying ways) and the
+        processor output never contains ``video_context_token_id``. In that
+        case each video frame block is rebuilt with ``num_image_token``
+        positions of ``video_context_token_id``, the layout the model's
+        forward pass expects. Returns ``(input_ids, attention_mask,
+        video_token_id, warnings)``; ``video_token_id`` is ``None`` when the
+        layout could not be determined.
+        """
+        token = getattr(self.processor, "video_token", "<video>")
+        token_ids = self.processor.tokenizer.encode(token, add_special_tokens=False)
+        if len(token_ids) == 1:
+            return input_ids, attention_mask, token_ids[0], ()
+
+        fragmented = (
+            f"The tokenizer has no single token for the video placeholder "
+            f"{token!r} (it encodes to {len(token_ids)} tokens), so the "
+            "processor output splits every frame placeholder into text "
+            "fragments."
+        )
+        video_token_id = getattr(self.config, "video_context_token_id", None)
+        tokens_per_frame = getattr(
+            getattr(self.processor, "image_processor", None), "num_image_token", None
+        )
+        if not isinstance(video_token_id, int) or not isinstance(tokens_per_frame, int):
+            return (
+                input_ids,
+                attention_mask,
+                None,
+                (
+                    f"{fragmented} config.video_context_token_id or "
+                    "image_processor.num_image_token is unavailable, so "
+                    "video_tokens counts those fragments and may not match "
+                    "the model's video context.",
+                ),
+            )
+
+        if input_ids.shape[0] != 1:
+            raise ValueError("Nemotron video analysis supports batch size 1 only")
+
+        active_ids = input_ids[0][attention_mask[0]].tolist()
+        image_token_id = self._placeholder_token_id("image", "<image>")
+        try:
+            rebuilt = self._rebuild_video_blocks(
+                active_ids, image_token_id, video_token_id, tokens_per_frame
+            )
+        except RuntimeError as error:
+            return (
+                input_ids,
+                attention_mask,
+                None,
+                (f"{fragmented} Frame blocks could not be rebuilt ({error}).",),
+            )
+        rebuilt_ids = torch.tensor([rebuilt], dtype=input_ids.dtype)
+        rebuilt_mask = torch.ones_like(rebuilt_ids, dtype=torch.bool)
+
+        return (
+            rebuilt_ids,
+            rebuilt_mask,
+            video_token_id,
+            (
+                f"{fragmented} The model only matches video embeddings to "
+                f"video_context_token_id ({video_token_id}), so the report "
+                f"rebuilds each frame as {tokens_per_frame} positions of that "
+                "ID, the layout the model expects. Running this processor "
+                "output through the model unchanged would fail.",
+            ),
+        )
+
+    def _rebuild_video_blocks(
+        self,
+        token_ids: list[int],
+        image_token_id: int,
+        video_token_id: int,
+        tokens_per_frame: int,
+    ) -> list[int]:
+        """Replace the interior of each video ``<img>`` block.
+
+        Image blocks are recognised by their ``image_token_id`` placeholders
+        and kept as they are; any other block is a video frame.
+        """
+        interior = self._image_block_interior(token_ids)
+        rebuilt: list[int] = []
+        block: list[int] = []
+
+        for token_id, inside in zip(token_ids, interior, strict=True):
+            if inside:
+                block.append(token_id)
+                continue
+
+            if block:
+                is_image = image_token_id in block
+                rebuilt += block if is_image else [video_token_id] * tokens_per_frame
+                block = []
+
+            rebuilt.append(token_id)
+
+        return rebuilt
+
     def _nemotron_media_masks(
-        self, input_ids: torch.Tensor, has_video: bool
+        self,
+        input_ids: torch.Tensor,
+        has_video: bool,
+        video_token_id: int | None = None,
     ) -> dict[str, torch.Tensor]:
         image_mask = self._placeholder_mask(input_ids, "image", "<image>")
         masks = {
@@ -116,9 +250,12 @@ class NemotronAdapter(ModelAdapter):
             "audio": self._placeholder_mask(input_ids, "audio", "<so_embedding>"),
         }
 
-        if has_video:
-            # Video frames are wrapped in the same <img>...</img> blocks as
-            # images; every non-image position inside a block is video. A
+        if has_video and video_token_id is not None:
+            masks["video"] = input_ids[0] == video_token_id
+        elif has_video:
+            # Fallback when the video token ID is unknown: video frames are
+            # wrapped in the same <img>...</img> blocks as images; every
+            # non-image position inside a block is video. A
             # malformed block structure leaves video unmapped (a warning),
             # rather than failing the analysis.
             try:
@@ -133,6 +270,7 @@ class NemotronAdapter(ModelAdapter):
         self,
         messages: list[Message],
         video_metadata: SimpleNamespace | None,
+        video_tokens: Sequence[int] = (),
     ) -> dict[tuple[int, int], dict[str, Any]]:
         properties: dict[tuple[int, int], dict[str, Any]] = {}
 
@@ -146,93 +284,23 @@ class NemotronAdapter(ModelAdapter):
                 }
 
         if video_metadata is not None:
+            frames = len(video_metadata.frames_indices)
+            video_properties: dict[str, Any] = {
+                "frames_sampled": frames,
+                "sample_fps": video_metadata.fps,
+                "max_frames": VIDEO_MAX_FRAMES,
+            }
+            rate = getattr(self.config, "video_pruning_rate", None)
+            if video_tokens and frames and isinstance(rate, (int, float)):
+                video_properties["evs_pruning_rate"] = rate
+                video_properties["tokens_after_evs"] = evs_retained_tokens(
+                    video_tokens[0], frames, rate
+                )
             for source in self._build_media_sources(messages, "video"):
-                properties[(source.message_index, source.content_index)] = {
-                    "frames_sampled": len(video_metadata.frames_indices),
-                    "sample_fps": VIDEO_SAMPLE_FPS,
-                    "max_frames": VIDEO_MAX_FRAMES,
-                }
+                key = (source.message_index, source.content_index)
+                properties[key] = video_properties
 
         return properties
-
-    def _video_placeholder_warnings(self, has_video: bool) -> tuple[str, ...]:
-        if not has_video:
-            return ()
-
-        token = getattr(self.processor, "video_token", "<video>")
-        token_ids = self.processor.tokenizer.encode(token, add_special_tokens=False)
-        if isinstance(token_ids, list) and len(token_ids) != 1:
-            return (
-                f"The tokenizer splits the video placeholder {token!r} into "
-                f"{len(token_ids)} tokens, so each frame's placeholders are "
-                "tokenized as text fragments. video_tokens reflects the "
-                "processor output, which may not match the model's intended "
-                "video context.",
-            )
-
-        return ()
-
-    def _build_video_segments(
-        self,
-        messages: list[Message],
-        *,
-        video: np.ndarray | torch.Tensor | None,
-        video_metadata: SimpleNamespace | None,
-    ) -> tuple[TokenSegment, ...]:
-        sources = self._build_media_sources(messages, "video")
-        token_counts = (
-            []
-            if video is None
-            else [
-                self._count_video_tokens(
-                    video=video,
-                    video_metadata=video_metadata,
-                )
-            ]
-        )
-
-        return self._build_segments_from_counts(
-            sources,
-            token_counts,
-            source_name="video token counts",
-        )
-
-    def _count_video_tokens(
-        self,
-        *,
-        video: np.ndarray | torch.Tensor | None,
-        video_metadata: SimpleNamespace | None,
-    ) -> int:
-        if video is None:
-            return 0
-
-        processor_kwargs: dict[str, Any] = {
-            "text": ["<video>"],
-            "videos": video,
-            "return_tensors": "pt",
-        }
-
-        if video_metadata is not None:
-            processor_kwargs["videos_kwargs"] = {
-                "video_metadata": video_metadata,
-            }
-
-        video_inputs = self.processor(**processor_kwargs)
-
-        return self._count_tokens_inside_image_blocks(
-            input_ids=video_inputs["input_ids"],
-            attention_mask=video_inputs["attention_mask"],
-        )
-
-    def _count_tokens_inside_image_blocks(
-        self,
-        *,
-        input_ids: torch.Tensor,
-        attention_mask: torch.Tensor,
-    ) -> int:
-        active_ids = input_ids[0][attention_mask[0].bool()].tolist()
-
-        return sum(self._image_block_interior(active_ids))
 
     def _image_block_interior(self, token_ids: list[int]) -> list[bool]:
         """Mark positions strictly inside ``<img>...</img>`` blocks."""
@@ -346,8 +414,12 @@ class NemotronAdapter(ModelAdapter):
 
         video = np.stack(frames, axis=0)
 
+        # The processor stamps frame j at j / metadata.fps, so fps must be the
+        # rate frames were sampled at, not the source frame rate. Every frame
+        # is kept when the source is slower than the requested rate.
         metadata = SimpleNamespace(
-            fps=source_fps,
+            fps=min(fps, source_fps) if source_fps else fps,
+            source_fps=source_fps,
             frames_indices=frame_indices,
             total_num_frames=total_frames,
         )
@@ -474,3 +546,17 @@ class NemotronAdapter(ModelAdapter):
                 "The Nemotron processor does not correctly expand "
                 "multiple <video> placeholders."
             )
+
+
+def evs_retained_tokens(video_tokens: int, frames: int, pruning_rate: float) -> int:
+    """Video tokens kept by Efficient Video Sampling.
+
+    Mirrors ``EfficientVideoSampling.compute_retention_mask`` in the model's
+    remote code: ``max(per_frame, int(frames * per_frame * (1 - rate)))``. The
+    count is exact; which tokens are kept depends on frame content.
+    """
+    if pruning_rate <= 0 or frames <= 0:
+        return video_tokens
+
+    per_frame = video_tokens // frames
+    return max(per_frame, int(frames * per_frame * (1 - pruning_rate)))

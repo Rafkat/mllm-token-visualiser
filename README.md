@@ -28,8 +28,8 @@ The library distinguishes user text, modality positions, chat-template overhead,
 
 Gemma 4 modality support depends on the selected checkpoint and its processor. The adapter can account for image, video, and audio placeholders when the checkpoint supports them.
 
-The Nemotron adapter has been validated with
-`nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-FP8`.
+The Nemotron adapter has been checked against the processor of
+`nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-FP8` (revision `0acd4b1c`).
 Other precision variants may use different revisions of the remote processor
 and have not yet been validated.
 Nemotron 3 Nano Omni currently supports one video per request. Video files are sampled with PyAV before being passed to the model processor.
@@ -312,6 +312,8 @@ report = analyzer.analyze(messages)
 report.print_dict()
 ```
 
+Qwen3-Omni videos are sampled at 2 fps, as in the model card's `qwen-omni-utils` pipeline. The processor's own default keeps every source frame (about 12× more tokens for a 24 fps clip, enough to exceed the context window); the per-frame pixel limits of `qwen-omni-utils` are not replicated.
+
 The Qwen3-Omni input KV-cache estimate uses the Thinker text decoder because it maintains the autoregressive multimodal context. Talker-generation memory is separate and is not included in this input-context estimate.
 
 ## Gemma 4 example
@@ -355,7 +357,11 @@ messages = [
 report = analyzer.analyze(messages)
 report.print_dict()
 ```
-The Nemotron adapter uses PyAV to sample video frames and passes the resulting array with source-frame metadata to the model processor. The current processor integration supports one video per request.
+The Nemotron adapter uses PyAV to sample video frames at 2 fps (up to 256 frames) and passes them to the model processor with the sampling rate, so frame timestamps in the prompt are correct. The current processor integration supports one video per request.
+
+Video placeholders need care with this checkpoint. Its tokenizer has no single `<video>` token, so the processor's output splits every frame placeholder into text fragments that the model never matches: the model scatters video embeddings into positions equal to `config.video_context_token_id`. The adapter rebuilds each frame as `num_image_token` (256) positions of that ID, which is the layout the model expects, and reports this as a warning. `video_tokens` is therefore 256 per sampled frame.
+
+The model also applies Efficient Video Sampling (EVS) after the vision encoder and drops a fixed share of video tokens (`config.video_pruning_rate`, 0.7 for this checkpoint). The retained count is deterministic and is reported as `media[i].properties["tokens_after_evs"]`; `total_tokens` and the KV-cache estimate count video tokens before EVS.
 NemotronH combines Mamba-2, attention, and MoE layers. Its KV-cache estimate includes only layers marked as attention layers in hybrid_override_pattern; recurrent Mamba state is not included.
 
 

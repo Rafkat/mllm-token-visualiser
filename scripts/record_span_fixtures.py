@@ -32,7 +32,7 @@ VIDEO = Video(ASSETS / "video_sample.mp4")
 # (model ID, trust_remote_code, media). MiniCPM-o video needs the ffmpeg CLI.
 MODELS = {
     "qwen3vl": ("Qwen/Qwen3-VL-8B-Instruct", False, [IMAGE, VIDEO]),
-    "qwen3omni": ("Qwen/Qwen3-Omni-30B-A3B-Instruct", False, [IMAGE, AUDIO]),
+    "qwen3omni": ("Qwen/Qwen3-Omni-30B-A3B-Instruct", False, [IMAGE, AUDIO, VIDEO]),
     "gemma4": ("google/gemma-4-e4b-it", False, [IMAGE, AUDIO, VIDEO]),
     "minicpmo45": ("openbmb/MiniCPM-o-4_5", True, [IMAGE, AUDIO]),
     "nemotron": (

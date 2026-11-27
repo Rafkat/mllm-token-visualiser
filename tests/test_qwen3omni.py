@@ -56,3 +56,16 @@ def test_qwen3omni_builds_all_modality_segments() -> None:
         + report.audio_tokens
         + report.template_tokens
     )
+
+
+def test_qwen3omni_samples_videos_at_two_fps() -> None:
+    # The processor default keeps every source frame; the model card's
+    # pipeline samples at 2 fps.
+    messages = [Message.user(Video("video.mp4"), Text("Describe"))]
+    normalized = Qwen3OmniAdapter._normalize_messages(messages)
+
+    assert Qwen3OmniAdapter._video_sampling_kwargs(normalized) == {
+        "processor_kwargs": {"do_sample_frames": True, "fps": 2.0}
+    }
+    image_only = Qwen3OmniAdapter._normalize_messages([Message.user(Image("a.jpg"))])
+    assert Qwen3OmniAdapter._video_sampling_kwargs(image_only) == {}
