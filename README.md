@@ -99,6 +99,38 @@ video 11200 207 {'duration_seconds': 25.108, 'grid_thw': [25, 28, 64], 'frames_s
 
 Source properties (`width`, `height`, `duration_seconds`, `source_fps`, `sample_rate`) are read from file headers only. Processor properties depend on the model family: patch grids for Qwen, pooled patches for Gemma 4, slices and sampled frames for MiniCPM-o, and tiles and sampled frames for Nemotron.
 
+### Terminal view
+
+```python
+report.show()  # summary, composition, items, token map, warnings, assumptions
+report.show(show_template=True)  # also list decoded chat-template spans
+report.show(width=80, map_rows=4)  # bar/map width in cells, map height in rows
+```
+
+Abridged output (bar shortened, one item row shown) for `Qwen/Qwen3-VL-8B-Instruct` with `examples/detailed_report.py`:
+
+```text
+Total tokens          11,639
+KV cache (estimate)   1.60 GiB  (144.00 KiB per token, bfloat16)
+
+Composition
+█▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒··
+  Kind          Tokens    Share    KV cache
+  ██ text           15     0.1%    2.11 MiB
+  ▓▓ image         192     1.6%   27.00 MiB
+  ▒▒ video      11,200    96.2%    1.54 GiB
+  ░░ audio           0     0.0%         0 B
+  ·· template      232     2.0%   32.62 MiB
+
+Input items
+  Msg  Role    Item      Tokens  Share  Details
+    1  user    ▒▒ video  11,200  96.2%  1024×432 → 1024×448, 25.108 s, 50 frames,
+                                        grid 25×28×64, 446.07 tok/s, 224 tok/frame,
+                                        +207 overhead
+```
+
+Each kind has its own colour and glyph (`█ text`, `▓ image`, `▒ video`, `░ audio`, `· template`), so the view also works without colour, for example with `NO_COLOR=1` or in logs. In the token map one cell stands for several positions and shows their majority kind; use `report.spans` or the template view for exact positions. `mllm_tokens.display.render_report()` returns the `rich` renderable for embedding in other output.
+
 ### Breakdowns and export
 
 ```python
@@ -389,6 +421,7 @@ import:       mllm_tokens
 src/mllm_tokens/
 ├── __init__.py
 ├── analyzer.py
+├── display.py
 ├── inputs.py
 ├── media.py
 ├── registry.py
@@ -430,6 +463,7 @@ mllm-token-visualiser/
     ├── basic_audio.py
     ├── basic_image.py
     ├── basic_video.py
+    ├── detailed_report.py
     └── interleaved.py
 ```
 

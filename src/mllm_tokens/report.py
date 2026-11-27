@@ -184,6 +184,16 @@ class TokenReport:
             ({**asdict(span), "tokens": span.tokens} for span in self.spans),
         )
 
+    def show(self, **options: Any) -> None:
+        """Print a rich terminal overview; see ``mllm_tokens.display``.
+
+        Options: ``width``, ``map_rows``, ``show_template``,
+        ``max_template_spans``, and ``console``.
+        """
+        from mllm_tokens.display import print_report
+
+        print_report(self, **options)
+
     def print_dict(self) -> None:
         key_values = [
             (key, value)
